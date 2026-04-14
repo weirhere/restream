@@ -1,36 +1,52 @@
-import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  [
+    "group/button inline-flex shrink-0 items-center justify-center gap-2",
+    "whitespace-nowrap text-sm font-medium tracking-tight",
+    "rounded-[var(--radius-md)] border border-transparent",
+    "transition-[transform,box-shadow,background-color,color,border-color] duration-200 ease-out",
+    "outline-none select-none",
+    "focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base",
+    "disabled:pointer-events-none disabled:opacity-40",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  ],
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // flat violet fill
+        default:
+          "bg-brand-500 text-white shadow-[0_1px_0_0_rgba(255,255,255,0.12)_inset,0_8px_18px_-8px_rgba(124,92,255,0.55)] hover:bg-brand-400 hover:-translate-y-[1px] active:translate-y-0 active:bg-brand-600",
+        // hero CTA — gradient fill + brand glow, reacts to hover/arm
+        glow: [
+          "text-white bg-gradient-brand",
+          "shadow-[var(--shadow-glow-brand)]",
+          "hover:shadow-[var(--shadow-glow-brand-strong)] hover:-translate-y-[1px]",
+          "active:translate-y-0",
+          "after:absolute after:inset-0 after:rounded-[inherit] after:bg-[linear-gradient(180deg,rgba(255,255,255,0.2),transparent_40%)] after:pointer-events-none",
+          "relative overflow-hidden",
+        ],
+        // subtle frost outline
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "border-hairline-strong bg-white/[0.03] text-fg-primary hover:bg-white/[0.06] hover:border-hairline-strong hover:-translate-y-[1px]",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "text-fg-muted hover:text-fg-primary hover:bg-white/[0.04]",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-live/90 text-white hover:bg-live shadow-[0_0_0_1px_rgba(255,71,87,0.25),0_6px_18px_-6px_rgba(255,71,87,0.55)]",
+        link: "text-brand-400 hover:text-brand-300 underline-offset-4 hover:underline",
       },
       size: {
-        default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-8",
-        "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+        xs: "h-7 px-2 text-xs rounded-[8px]",
+        sm: "h-8 px-3 text-[0.8125rem] rounded-[10px]",
+        default: "h-10 px-4",
+        lg: "h-11 px-5 text-[0.9375rem]",
+        xl: "h-14 px-7 text-base rounded-[14px]",
+        icon: "size-10",
+        "icon-sm": "size-8 rounded-[10px]",
       },
     },
     defaultVariants: {
@@ -38,21 +54,24 @@ const buttonVariants = cva(
       size: "default",
     },
   }
-)
+);
+
+type ButtonProps = React.ComponentProps<typeof ButtonPrimitive> &
+  VariantProps<typeof buttonVariants>;
 
 function Button({
   className,
   variant = "default",
   size = "default",
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonProps) {
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };
