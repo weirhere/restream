@@ -2,8 +2,26 @@
 
 import * as React from "react";
 import { motion } from "motion/react";
+import { ChevronDown, Pencil } from "lucide-react";
 
 import { TopBar } from "@/components/app/topbar";
+import type { LiveState } from "@/components/app/live-indicator";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  DestinationCard,
+  DESTINATIONS_BASE,
+  type Destination,
+} from "@/components/stream/destination-card";
+import { StreamHealth } from "@/components/stream/stream-health";
+import { PreFlightSummary } from "@/components/stream/pre-flight-summary";
 import {
   TwitchIcon,
   YoutubeIcon,
@@ -12,24 +30,8 @@ import {
   KickIcon,
   XIcon,
 } from "@/components/stream/brand-icons";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DestinationCard,
-  type Destination,
-} from "@/components/stream/destination-card";
-import { StreamHealth } from "@/components/stream/stream-health";
-import { GoLiveButton } from "@/components/stream/go-live-button";
 import { fadeUp, stagger, staggerTight } from "@/lib/motion";
+import type { StreamPhase } from "@/components/stream/go-live-button";
 
 const CATEGORIES = [
   "Just Chatting",
@@ -40,62 +42,19 @@ const CATEGORIES = [
   "Creative",
 ];
 
-const DESTINATIONS: Destination[] = [
-  {
-    id: "twitch",
-    name: "twitch.tv/andyweirdev",
-    platform: "Twitch",
-    handle: "andyweirdev",
-    color: "#9146FF",
-    connected: true,
-    icon: <TwitchIcon />,
-  },
-  {
-    id: "youtube",
-    name: "YouTube Live",
-    platform: "YouTube",
-    handle: "@restream-playground",
-    color: "#FF0033",
-    connected: true,
-    icon: <YoutubeIcon />,
-  },
-  {
-    id: "facebook",
-    name: "Facebook Live",
-    platform: "Facebook",
-    handle: "Restream Dev",
-    color: "#1877F2",
-    connected: true,
-    icon: <FacebookIcon />,
-  },
-  {
-    id: "x",
-    name: "X (formerly Twitter)",
-    platform: "X",
-    handle: "@andyweirdev",
-    color: "#e5e5ea",
-    connected: true,
-    icon: <XIcon />,
-  },
-  {
-    id: "linkedin",
-    name: "LinkedIn Live",
-    platform: "LinkedIn",
-    handle: "Andy Weir",
-    color: "#0A66C2",
-    connected: false,
-    icon: <LinkedInIcon />,
-  },
-  {
-    id: "kick",
-    name: "kick.com/andyweir",
-    platform: "Kick",
-    handle: "andyweir",
-    color: "#53FC18",
-    connected: true,
-    icon: <KickIcon />,
-  },
-];
+const ICONS: Record<string, React.ReactNode> = {
+  twitch: <TwitchIcon />,
+  youtube: <YoutubeIcon />,
+  facebook: <FacebookIcon />,
+  x: <XIcon />,
+  linkedin: <LinkedInIcon />,
+  kick: <KickIcon />,
+};
+
+const DESTINATIONS: Destination[] = DESTINATIONS_BASE.map((d) => ({
+  ...d,
+  icon: ICONS[d.id],
+}));
 
 export default function StreamPage() {
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({
@@ -107,108 +66,214 @@ export default function StreamPage() {
     kick: false,
   });
   const [category, setCategory] = React.useState<string>("Software Dev");
-  const [live, setLive] = React.useState(false);
+  const [title, setTitle] = React.useState(
+    "Building restream-playground — live design engineering"
+  );
+  const [description, setDescription] = React.useState(
+    "Spinning up a fresh design system from scratch — Next.js, Tailwind, shadcn, motion. Chat along while we build."
+  );
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
+
+  const [phase, setPhase] = React.useState<StreamPhase>("offline");
+  const [countdown, setCountdown] = React.useState(3);
 
   const enabledCount = Object.values(enabled).filter(Boolean).length;
-  const armed = enabledCount > 0 && !live;
+
+  // Sort destinations enabled-first so toggling reorders the grid
+  const sortedDestinations = React.useMemo(() => {
+    return [...DESTINATIONS].sort((a, b) => {
+      const ae = enabled[a.id] ? 1 : 0;
+      const be = enabled[b.id] ? 1 : 0;
+      if (ae !== be) return be - ae;
+      if (a.connected !== b.connected) return a.connected ? -1 : 1;
+      return 0;
+    });
+  }, [enabled]);
 
   function toggle(id: string, next: boolean) {
     setEnabled((prev) => ({ ...prev, [id]: next }));
   }
 
+  // Countdown driver
+  React.useEffect(() => {
+    if (phase !== "counting") return;
+    if (countdown <= 0) {
+      setPhase("live");
+      return;
+    }
+    const t = window.setTimeout(() => setCountdown((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [phase, countdown]);
+
+  const onStart = () => {
+    if (enabledCount === 0) return;
+    setCountdown(3);
+    setPhase("counting");
+  };
+  const onCancel = () => {
+    setPhase("offline");
+    setCountdown(3);
+  };
+  const onEnd = () => {
+    setPhase("offline");
+    setCountdown(3);
+  };
+
+  const liveState: LiveState =
+    phase === "live" ? "live" : phase === "counting" ? "starting" : "offline";
+
   return (
     <>
-      <TopBar liveState={live ? "live" : "offline"} />
+      <TopBar liveState={liveState} />
 
-      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-8 px-6 py-8 md:px-10 md:py-10">
-        {/* Header */}
-        <motion.div
+      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-6 py-6 md:px-10 md:py-8">
+        {/* Pre-flight summary — primary status, owns the truth */}
+        <motion.div variants={fadeUp} initial="hidden" animate="visible">
+          <PreFlightSummary
+            phase={phase}
+            countdownValue={countdown}
+            destinations={DESTINATIONS}
+            enabled={enabled}
+            onStart={onStart}
+            onCancel={onCancel}
+            onEnd={onEnd}
+          />
+        </motion.div>
+
+        {/* Destinations — primary work, above the fold */}
+        <motion.section
           variants={stagger}
           initial="hidden"
           animate="visible"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-3"
+          aria-labelledby="destinations-heading"
         >
-          <motion.div variants={fadeUp} className="flex items-center gap-3">
-            <Badge variant={armed ? "brand" : "neutral"}>
-              {live ? "Broadcasting" : armed ? "Armed" : "Idle"}
-            </Badge>
-            <span className="text-[0.75rem] text-fg-subtle">
-              Session created just now
-            </span>
+          <motion.div
+            variants={fadeUp}
+            className="flex items-end justify-between"
+          >
+            <div className="flex items-baseline gap-3">
+              <h2
+                id="destinations-heading"
+                className="text-[1.125rem] font-semibold tracking-tight"
+              >
+                Destinations
+              </h2>
+              <span className="text-[0.8125rem] text-fg-subtle tabular-nums">
+                {enabledCount} of {DESTINATIONS.length}
+              </span>
+            </div>
+            <Button variant="outline" size="sm">
+              Add destination
+            </Button>
           </motion.div>
 
           <motion.div
-            variants={fadeUp}
-            className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between"
+            variants={staggerTight}
+            initial="hidden"
+            animate="visible"
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
           >
-            <div>
-              <h1 className="text-[2.25rem] font-semibold leading-[1.1] tracking-[-0.02em] md:text-[2.75rem]">
-                <span className="text-gradient-brand">Stream Control Center</span>
-              </h1>
-              <p className="mt-1.5 max-w-xl text-sm text-fg-muted">
-                Configure your broadcast, choose destinations, and go live to
-                every platform at once.
-              </p>
-            </div>
-
-            <GoLiveButton
-              armed={armed}
-              live={live}
-              disabled={enabledCount === 0 && !live}
-              destinationCount={enabledCount}
-              onClick={() => setLive((l) => !l)}
-            />
+            {sortedDestinations.map((d) => (
+              <DestinationCard
+                key={d.id}
+                destination={d}
+                enabled={!!enabled[d.id]}
+                onToggle={toggle}
+              />
+            ))}
           </motion.div>
-        </motion.div>
+        </motion.section>
 
-        {/* Main grid */}
-        <motion.div
-          variants={stagger}
+        {/* Stream health — compact row, clearly secondary */}
+        <motion.section
+          variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="grid gap-6 md:grid-cols-[1fr_360px]"
+          className="flex flex-col gap-2"
+          aria-label="Stream health"
         >
-          {/* Left column — details + destinations */}
-          <div className="flex flex-col gap-6 min-w-0">
-            {/* Stream details */}
-            <motion.div variants={fadeUp}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Stream details</CardTitle>
-                  <CardDescription>
-                    These appear on every destination that supports them.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-4 pb-5">
+          <StreamHealth />
+        </motion.section>
+
+        {/* Stream details — collapsed accordion */}
+        <motion.section
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          className="flex flex-col gap-2"
+          aria-label="Stream details"
+        >
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((v) => !v)}
+            className={cn(
+              "flex items-center gap-3 rounded-[var(--radius-md)]",
+              "border border-hairline bg-white/[0.02] px-4 py-3",
+              "text-left transition-colors hover:bg-white/[0.04]"
+            )}
+            aria-expanded={detailsOpen}
+          >
+            <Pencil className="size-4 text-fg-subtle shrink-0" />
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
+                {title}
+              </span>
+              <span className="text-[0.75rem] text-fg-subtle">
+                {category} · {description.length > 60 ? `${description.slice(0, 60)}…` : description || "No description"}
+              </span>
+            </div>
+            <Badge variant="neutral" size="sm">
+              {detailsOpen ? "Close" : "Edit"}
+            </Badge>
+            <ChevronDown
+              className={cn(
+                "size-4 text-fg-subtle transition-transform shrink-0",
+                detailsOpen && "rotate-180"
+              )}
+            />
+          </button>
+
+          {detailsOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden"
+            >
+              <Card className="mt-1">
+                <CardContent className="flex flex-col gap-4 py-5">
                   <div className="flex flex-col gap-1.5">
                     <label
                       htmlFor="stream-title"
-                      className="text-[0.75rem] font-medium uppercase tracking-[0.08em] text-fg-muted"
+                      className="text-[0.75rem] font-medium text-fg-muted"
                     >
                       Title
                     </label>
                     <Input
                       id="stream-title"
-                      defaultValue="Building restream-playground — live design engineering"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
                     />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
                     <label
                       htmlFor="stream-desc"
-                      className="text-[0.75rem] font-medium uppercase tracking-[0.08em] text-fg-muted"
+                      className="text-[0.75rem] font-medium text-fg-muted"
                     >
                       Description
                     </label>
                     <Textarea
                       id="stream-desc"
-                      defaultValue="Spinning up a fresh design system from scratch — Next.js, Tailwind, shadcn, motion. Chat along while we build."
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
                       rows={3}
                     />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[0.75rem] font-medium uppercase tracking-[0.08em] text-fg-muted">
+                    <span className="text-[0.75rem] font-medium text-fg-muted">
                       Category
                     </span>
                     <div className="flex flex-wrap gap-1.5">
@@ -234,105 +299,68 @@ export default function StreamPage() {
                 </CardContent>
               </Card>
             </motion.div>
+          )}
+        </motion.section>
 
-            {/* Destinations */}
-            <motion.div variants={fadeUp} className="flex flex-col gap-3">
-              <div className="flex items-end justify-between">
-                <div>
-                  <h2 className="text-[1.125rem] font-semibold tracking-tight">
-                    Destinations
-                  </h2>
-                  <p className="text-[0.8125rem] text-fg-muted">
-                    {enabledCount} of {DESTINATIONS.length} enabled
-                  </p>
-                </div>
-                <Button variant="outline" size="sm">
-                  Add destination
-                </Button>
-              </div>
-
-              <motion.div
-                variants={staggerTight}
-                initial="hidden"
-                animate="visible"
-                className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        {/* Preview — small, inline, not a faux-hero */}
+        <motion.section
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          className="flex flex-col gap-2"
+          aria-label="Stream preview"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-[1.125rem] font-semibold tracking-tight">
+              Preview
+            </h2>
+            <span className="text-[0.75rem] text-fg-subtle tabular-nums">
+              {phase === "live" ? "00:00:42" : "—"} · 1080p · 60fps
+            </span>
+          </div>
+          <div
+            className="relative aspect-[16/7] overflow-hidden rounded-[var(--radius-md)] border border-hairline"
+            style={{
+              background:
+                "radial-gradient(120% 100% at 30% 0%, rgba(124,92,255,0.35), transparent 60%), radial-gradient(100% 100% at 100% 100%, rgba(83,131,255,0.3), transparent 55%), #0b0b18",
+            }}
+          >
+            <div className="absolute inset-0 flex items-center justify-center">
+              <button
+                type="button"
+                aria-label="Play preview"
+                className={cn(
+                  "group relative flex size-16 items-center justify-center rounded-full",
+                  "bg-white/10 backdrop-blur-md border border-white/20",
+                  "transition-transform hover:scale-105 active:scale-95"
+                )}
               >
-                {DESTINATIONS.map((d) => (
-                  <DestinationCard
-                    key={d.id}
-                    destination={d}
-                    enabled={!!enabled[d.id]}
-                    onToggle={toggle}
-                  />
-                ))}
-              </motion.div>
-            </motion.div>
+                <span className="absolute inset-0 rounded-full bg-white/10 group-hover:bg-white/15 transition-colors" />
+                <span
+                  className="relative size-0 border-y-[10px] border-y-transparent border-l-[16px] border-l-white ml-1 drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]"
+                  aria-hidden
+                />
+              </button>
+            </div>
+            <div className="absolute top-3 left-3 flex items-center gap-2">
+              {phase === "live" ? (
+                <Badge variant="live">
+                  <span className="live-dot" /> Live
+                </Badge>
+              ) : phase === "counting" ? (
+                <Badge variant="warn">Starting</Badge>
+              ) : (
+                <Badge variant="neutral">Preview</Badge>
+              )}
+            </div>
+            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[0.75rem] text-white/80">
+              <span className="font-medium tabular-nums">
+                Camera · Screen share
+              </span>
+              <span className="tabular-nums">Audio -18 LUFS</span>
+            </div>
           </div>
-
-          {/* Right column — stream health + preview */}
-          <div className="flex flex-col gap-6">
-            <motion.div variants={fadeUp} className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[1.125rem] font-semibold tracking-tight">
-                  Stream health
-                </h2>
-                <span className="text-[0.6875rem] uppercase tracking-[0.1em] text-fg-subtle">
-                  Last 30s
-                </span>
-              </div>
-              <motion.div variants={staggerTight} initial="hidden" animate="visible">
-                <StreamHealth />
-              </motion.div>
-            </motion.div>
-
-            <motion.div variants={fadeUp}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Preview</CardTitle>
-                  <CardDescription>
-                    What your audience will see at go-live.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div
-                    className="relative aspect-video overflow-hidden rounded-[var(--radius-md)] border border-hairline"
-                    style={{
-                      background:
-                        "radial-gradient(120% 100% at 30% 0%, rgba(124,92,255,0.35), transparent 60%), radial-gradient(100% 100% at 100% 100%, rgba(83,131,255,0.3), transparent 55%), #0b0b18",
-                    }}
-                  >
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="flex flex-col items-center gap-3 text-center">
-                        <div className="relative flex size-14 items-center justify-center rounded-full bg-white/10 backdrop-blur-md border border-white/20">
-                          <div className="absolute inset-0 rounded-full bg-brand-500/20 animate-pulse" />
-                          <div className="relative size-0 border-y-[9px] border-y-transparent border-l-[14px] border-l-white ml-1" />
-                        </div>
-                        <span className="text-[0.75rem] font-medium text-fg-muted">
-                          Camera + screen share
-                        </span>
-                      </div>
-                    </div>
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
-                      {live ? (
-                        <Badge variant="live">
-                          <span className="live-dot" /> Live
-                        </Badge>
-                      ) : (
-                        <Badge variant="neutral">Preview</Badge>
-                      )}
-                    </div>
-                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[0.6875rem] text-white/80">
-                      <span className="font-medium tabular-nums">
-                        {live ? "00:00:42" : "00:00:00"}
-                      </span>
-                      <span className="tabular-nums">1080p · 60fps</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-        </motion.div>
+        </motion.section>
       </main>
     </>
   );

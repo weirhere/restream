@@ -5,9 +5,9 @@ import { Bell, Search, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarBadge } from "@/components/ui/avatar";
-import { LiveIndicator } from "@/components/app/live-indicator";
+import { LiveIndicator, type LiveState } from "@/components/app/live-indicator";
 
-export function TopBar({ liveState }: { liveState?: "offline" | "live" }) {
+export function TopBar({ liveState }: { liveState?: LiveState }) {
   return (
     <header
       className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-hairline bg-bg-base/70 backdrop-blur-xl px-6"
