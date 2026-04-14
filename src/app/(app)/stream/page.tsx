@@ -2,14 +2,17 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, Video, CheckCircle2, X as XIconClose } from "lucide-react";
+import {
+  ChevronDown,
+  X as XIconClose,
+  CheckCircle2,
+  History,
+} from "lucide-react";
 
 import { TopBar } from "@/components/app/topbar";
 import type { LiveState } from "@/components/app/live-indicator";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +37,8 @@ import {
 } from "@/components/stream/brand-icons";
 import { fadeUp, stagger, staggerTight, easeOutExpo } from "@/lib/motion";
 import type { StreamPhase } from "@/components/stream/go-live-button";
+import { SourceConfigModal } from "@/components/stream/source-config-modal";
+import { StreamSummaryModal } from "@/components/stream/stream-summary-modal";
 
 const CATEGORIES = [
   "Just Chatting",
@@ -65,6 +70,7 @@ type PostStream = {
   destinations: string[];
   duration: string;
   peakViewers: number;
+  deltaPct: number;
 };
 
 export default function StreamPage() {
@@ -106,8 +112,14 @@ export default function StreamPage() {
   const [phase, setPhase] = React.useState<StreamPhase>("offline");
   const [countdown, setCountdown] = React.useState(3);
 
-  // Post-stream state — set briefly when a stream ends, so offline != pre-flight.
   const [postStream, setPostStream] = React.useState<PostStream | null>(null);
+
+  // First-time state toggle (would be derived from backend in real app).
+  const [firstTime, setFirstTime] = React.useState(false);
+
+  // Modal state
+  const [sourceConfigOpen, setSourceConfigOpen] = React.useState(false);
+  const [summaryOpen, setSummaryOpen] = React.useState(false);
 
   const enabledCount = Object.values(enabled).filter(Boolean).length;
 
@@ -143,7 +155,6 @@ export default function StreamPage() {
     });
   }
 
-  // Warning action with a 500ms "working…" intermediate state.
   function handleWarningAction(
     id: string,
     action: DestinationWarning["action"]
@@ -162,7 +173,6 @@ export default function StreamPage() {
     }, 500);
   }
 
-  // Countdown
   React.useEffect(() => {
     if (phase !== "counting") return;
     if (countdown <= 0) {
@@ -177,7 +187,14 @@ export default function StreamPage() {
     if (enabledCount === 0) return;
     setCountdown(3);
     setPhase("counting");
-    // starting a new stream clears any stale post-stream state
+    setPostStream(null);
+  };
+  const onProceedAnyway = () => {
+    // Same as onStart but bypasses over-capacity gate (documented separately
+    // via the "Go live anyway" button in the remedy callout).
+    if (enabledCount === 0) return;
+    setCountdown(3);
+    setPhase("counting");
     setPostStream(null);
   };
   const onCancel = () => {
@@ -185,7 +202,6 @@ export default function StreamPage() {
     setCountdown(3);
   };
   const onEnd = () => {
-    // Capture a post-stream snapshot so the offline state knows we just finished.
     const destNames = destinations
       .filter((d) => enabled[d.id])
       .map((d) => d.platform);
@@ -194,15 +210,16 @@ export default function StreamPage() {
       destinations: destNames,
       duration: "42s",
       peakViewers: 287,
+      deltaPct: 12,
     });
     setPhase("offline");
     setCountdown(3);
+    setFirstTime(false);
   };
 
   const liveState: LiveState =
     phase === "live" ? "live" : phase === "counting" ? "starting" : "offline";
 
-  // Compute remedy (with postFixNeeded for hover-preview)
   const remedy = React.useMemo<FitRemedy | undefined>(() => {
     const needed = destinations
       .filter((d) => enabled[d.id])
@@ -212,7 +229,6 @@ export default function StreamPage() {
       );
     if (needed <= UPLOAD_MBPS) return undefined;
 
-    // strategy 1: smallest-quality-step that fits
     let best: FitRemedy | undefined;
     for (const d of destinations) {
       if (!enabled[d.id]) continue;
@@ -222,7 +238,6 @@ export default function StreamPage() {
         const alt = d.qualities[nextIdx];
         const saved = cur.bitrate - alt.bitrate;
         if (needed - saved > UPLOAD_MBPS) continue;
-        // prefer the smallest step that still fits (least quality loss)
         if (!best || saved < best.delta) {
           best = {
             kind: "lower-quality",
@@ -239,7 +254,6 @@ export default function StreamPage() {
     }
     if (best) return best;
 
-    // strategy 2: disable biggest
     const enabledSorted = destinations
       .filter((d) => enabled[d.id])
       .map((d) => ({
@@ -263,16 +277,34 @@ export default function StreamPage() {
     return undefined;
   }, [destinations, enabled, qualityIndex]);
 
+  // Last-stream data — for preflight summary
+  const lastStream = postStream
+    ? {
+        duration: postStream.duration,
+        peakViewers: postStream.peakViewers,
+        deltaPct: postStream.deltaPct,
+        when: timeAgo(postStream.endedAt),
+      }
+    : firstTime
+      ? undefined
+      : {
+          duration: "2h 14m",
+          peakViewers: 342,
+          deltaPct: 12,
+          when: "yesterday",
+        };
+
   return (
     <>
       <TopBar liveState={liveState} />
 
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-6 py-6 md:px-10 md:py-8">
-        {/* Post-stream recap banner */}
+        {/* Post-stream banner — persistent entry to summary */}
         <AnimatePresence initial={false}>
           {phase === "offline" && postStream && (
             <PostStreamBanner
               data={postStream}
+              onViewSummary={() => setSummaryOpen(true)}
               onDismiss={() => setPostStream(null)}
             />
           )}
@@ -286,10 +318,14 @@ export default function StreamPage() {
             destinations={destinations}
             enabled={enabled}
             qualityIndex={qualityIndex}
+            firstTime={firstTime}
+            lastStream={lastStream}
             remedy={remedy}
             onStart={onStart}
             onCancel={onCancel}
             onEnd={onEnd}
+            onProceedAnyway={onProceedAnyway}
+            onOpenSourceConfig={() => setSourceConfigOpen(true)}
           />
         </motion.div>
 
@@ -316,9 +352,21 @@ export default function StreamPage() {
                 {enabledCount} of {DESTINATIONS.length}
               </span>
             </div>
-            <Button variant="outline" size="sm">
-              Add destination
-            </Button>
+            <div className="flex items-center gap-2">
+              {postStream && (
+                <button
+                  type="button"
+                  onClick={() => setSummaryOpen(true)}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius-sm)] text-[0.75rem] font-medium border border-hairline bg-white/[0.03] text-fg-muted hover:text-fg-primary hover:bg-white/[0.06] transition-colors"
+                >
+                  <History className="size-3.5" />
+                  Last stream summary
+                </button>
+              )}
+              <Button variant="outline" size="sm">
+                Add destination
+              </Button>
+            </div>
           </motion.div>
 
           <motion.div
@@ -343,7 +391,7 @@ export default function StreamPage() {
           </motion.div>
         </motion.section>
 
-        {/* Utility footer — health + details + preview, one dense band */}
+        {/* Utility footer — health + details (preview moves out when offline) */}
         <motion.section variants={fadeUp} initial="hidden" animate="visible">
           <UtilityFooter
             phase={phase}
@@ -365,18 +413,38 @@ export default function StreamPage() {
           </UtilityFooter>
         </motion.section>
       </main>
+
+      {/* Modals */}
+      <SourceConfigModal
+        open={sourceConfigOpen}
+        onClose={() => setSourceConfigOpen(false)}
+      />
+      <StreamSummaryModal
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        data={postStream}
+      />
     </>
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
- * Post-stream banner — visible when offline AND postStream is set.
- * ──────────────────────────────────────────────────────────── */
+function timeAgo(ms: number): string {
+  const seconds = Math.floor((Date.now() - ms) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return "yesterday";
+}
+
 function PostStreamBanner({
   data,
+  onViewSummary,
   onDismiss,
 }: {
   data: PostStream;
+  onViewSummary: () => void;
   onDismiss: () => void;
 }) {
   const destinations = data.destinations.join(", ");
@@ -392,23 +460,24 @@ function PostStreamBanner({
       <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-success/25 bg-success/[0.06] px-4 py-3">
         <CheckCircle2 className="size-4 text-success shrink-0" />
         <div className="flex flex-col min-w-0 flex-1 leading-tight">
-          <span className="text-[0.8125rem] font-medium text-fg-primary">
+          <span className="text-[0.875rem] font-medium text-fg-primary">
             Stream ended · {data.duration} · {data.peakViewers} peak viewers
           </span>
           <span className="text-[0.75rem] text-fg-subtle truncate">
-            Broadcast to {destinations}. Summary ready.
+            Broadcast to {destinations}. Summary available anytime.
           </span>
         </div>
         <button
           type="button"
-          className="inline-flex items-center h-7 px-3 rounded-[var(--radius-sm)] text-[0.75rem] font-medium border border-hairline bg-white/[0.04] text-fg-primary hover:bg-white/[0.08] transition-colors"
+          onClick={onViewSummary}
+          className="inline-flex items-center h-8 px-3 rounded-[var(--radius-sm)] text-[0.75rem] font-medium border border-hairline bg-white/[0.04] text-fg-primary hover:bg-white/[0.08] transition-colors"
         >
           View summary
         </button>
         <button
           type="button"
           onClick={onDismiss}
-          className="inline-flex items-center justify-center size-7 rounded-[var(--radius-sm)] text-fg-subtle hover:text-fg-primary hover:bg-white/[0.04] transition-colors"
+          className="inline-flex items-center justify-center size-8 rounded-[var(--radius-sm)] text-fg-subtle hover:text-fg-primary hover:bg-white/[0.04] transition-colors"
           aria-label="Dismiss"
         >
           <XIconClose className="size-3.5" />
@@ -418,15 +487,7 @@ function PostStreamBanner({
   );
 }
 
-/* ─────────────────────────────────────────────────────────────
- * UtilityFooter — single container grouping health + details + preview.
- *
- *   Row 1: Stream health rail (borderless, flush)
- *   Row 2: Details accordion header (+ expand)
- *   Row 3: Preview source strip (or full preview when live)
- *
- * Shared border + bg so the three rows read as one utility band.
- * ──────────────────────────────────────────────────────────── */
+/* Utility footer — health + details only when offline. Preview moves into summary. */
 function UtilityFooter({
   phase,
   title,
@@ -442,13 +503,12 @@ function UtilityFooter({
   onToggleDetails: () => void;
   children?: React.ReactNode;
 }) {
+  const showLivePreview = phase === "live";
   return (
     <div className="flex flex-col rounded-[var(--radius-lg)] border border-hairline bg-white/[0.02] overflow-hidden">
-      {/* Row 1: Stream health */}
       <StreamHealth flush />
       <div className="h-px bg-hairline" />
 
-      {/* Row 2: Details accordion trigger */}
       <button
         type="button"
         onClick={onToggleDetails}
@@ -459,7 +519,7 @@ function UtilityFooter({
         aria-expanded={detailsOpen}
       >
         <div className="flex flex-col min-w-0 flex-1 leading-tight">
-          <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
+          <span className="text-[0.875rem] font-medium text-fg-primary truncate">
             {title}
           </span>
           <span className="text-[0.75rem] text-fg-subtle">{category}</span>
@@ -486,10 +546,13 @@ function UtilityFooter({
         )}
       </AnimatePresence>
 
-      <div className="h-px bg-hairline" />
-
-      {/* Row 3: Preview — collapsed row OR full preview when live */}
-      <PreviewRow phase={phase} />
+      {/* Full preview ONLY when live. Offline doesn't need the preview row. */}
+      {showLivePreview && (
+        <>
+          <div className="h-px bg-hairline" />
+          <LivePreview />
+        </>
+      )}
     </div>
   );
 }
@@ -539,9 +602,7 @@ function DetailsForm({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <span className="text-[0.75rem] font-medium text-fg-muted">
-          Category
-        </span>
+        <span className="text-[0.75rem] font-medium text-fg-muted">Category</span>
         <div className="flex flex-wrap gap-1.5">
           {CATEGORIES.map((c) => {
             const active = c === category;
@@ -566,30 +627,7 @@ function DetailsForm({
   );
 }
 
-function PreviewRow({ phase }: { phase: StreamPhase }) {
-  const expanded = phase === "live";
-  if (!expanded) {
-    return (
-      <div className="flex items-center gap-3 px-4 py-3">
-        <Video className="size-4 text-fg-subtle shrink-0" aria-hidden />
-        <div className="flex flex-col min-w-0 flex-1 leading-tight">
-          <span className="text-[0.8125rem] font-medium text-fg-primary">
-            Camera + screen share
-          </span>
-          <span className="text-[0.75rem] text-fg-subtle">
-            1080p · 60fps · no active preview
-          </span>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center h-7 px-2.5 rounded-[var(--radius-sm)] text-[0.75rem] font-medium border border-hairline bg-white/[0.04] text-fg-primary hover:bg-white/[0.08] transition-colors"
-        >
-          Configure source
-        </button>
-      </div>
-    );
-  }
-
+function LivePreview() {
   return (
     <div className="p-4">
       <div
@@ -612,15 +650,8 @@ function PreviewRow({ phase }: { phase: StreamPhase }) {
             />
           </button>
         </div>
-        <div className="absolute top-3 left-3 flex items-center gap-2">
-          <Badge variant="live">
-            <span className="live-dot" /> Live
-          </Badge>
-        </div>
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[0.75rem] text-white/80">
-          <span className="font-medium tabular-nums">
-            Camera · Screen share
-          </span>
+          <span className="font-medium tabular-nums">Camera · Screen share</span>
           <span className="tabular-nums">Audio -18 LUFS</span>
         </div>
       </div>

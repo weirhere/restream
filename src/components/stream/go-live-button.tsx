@@ -12,6 +12,8 @@ type GoLiveButtonProps = {
   countdownValue?: number; // 3 | 2 | 1 when phase === "counting"
   destinationCount: number;
   overBudget?: boolean;
+  /** Externally-imposed disabled (e.g., over-capacity gating). */
+  disabled?: boolean;
   onStart: () => void;
   onCancel: () => void;
   onEnd: () => void;
@@ -23,12 +25,14 @@ export function GoLiveButton({
   countdownValue = 3,
   destinationCount,
   overBudget = false,
+  disabled: externalDisabled = false,
   onStart,
   onCancel,
   onEnd,
   size = "default",
 }: GoLiveButtonProps) {
-  const disabled = phase === "offline" && destinationCount === 0;
+  const disabled =
+    externalDisabled || (phase === "offline" && destinationCount === 0);
 
   const handleClick = () => {
     if (phase === "offline") onStart();
