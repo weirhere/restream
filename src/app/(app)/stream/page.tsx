@@ -19,6 +19,7 @@ import {
   DestinationCard,
   DESTINATIONS_BASE,
   type Destination,
+  type DestinationOverride,
   type DestinationWarning,
 } from "@/components/stream/destination-card";
 import { StreamHealth } from "@/components/stream/stream-health";
@@ -39,6 +40,8 @@ import { fadeUp, stagger, staggerTight, easeOutExpo } from "@/lib/motion";
 import type { StreamPhase } from "@/components/stream/go-live-button";
 import { SourceConfigModal } from "@/components/stream/source-config-modal";
 import { StreamSummaryModal } from "@/components/stream/stream-summary-modal";
+import { DestinationOverrideModal } from "@/components/stream/destination-override-modal";
+import { useToast } from "@/components/ui/toast";
 
 const CATEGORIES = [
   "Just Chatting",
@@ -74,6 +77,8 @@ type PostStream = {
 };
 
 export default function StreamPage() {
+  const toast = useToast();
+
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({
     twitch: true,
     youtube: true,
@@ -99,6 +104,9 @@ export default function StreamPage() {
   const [connectedOverrides, setConnectedOverrides] = React.useState<
     Record<string, boolean>
   >({});
+  const [destOverrides, setDestOverrides] = React.useState<
+    Record<string, DestinationOverride>
+  >({});
 
   const [category, setCategory] = React.useState("Software Dev");
   const [title, setTitle] = React.useState(
@@ -113,13 +121,11 @@ export default function StreamPage() {
   const [countdown, setCountdown] = React.useState(3);
 
   const [postStream, setPostStream] = React.useState<PostStream | null>(null);
-
-  // First-time state toggle (would be derived from backend in real app).
   const [firstTime, setFirstTime] = React.useState(false);
 
-  // Modal state
   const [sourceConfigOpen, setSourceConfigOpen] = React.useState(false);
   const [summaryOpen, setSummaryOpen] = React.useState(false);
+  const [overrideForId, setOverrideForId] = React.useState<string | null>(null);
 
   const enabledCount = Object.values(enabled).filter(Boolean).length;
 
@@ -146,28 +152,38 @@ export default function StreamPage() {
     setEnabled((prev) => ({ ...prev, [id]: next }));
   }
 
-  function cycleQuality(id: string) {
-    setQualityIndex((prev) => {
-      const dest = DESTINATIONS.find((d) => d.id === id);
-      if (!dest) return prev;
-      const next = ((prev[id] ?? 0) + 1) % dest.qualities.length;
-      return { ...prev, [id]: next };
-    });
+  function setQuality(id: string, nextIndex: number) {
+    setQualityIndex((prev) => ({ ...prev, [id]: nextIndex }));
   }
 
   function handleWarningAction(
     id: string,
     action: DestinationWarning["action"]
   ) {
+    const platform = DESTINATIONS.find((d) => d.id === id)?.platform ?? "";
     setResolveState((prev) => ({ ...prev, [id]: "working" }));
     window.setTimeout(() => {
       if (action.kind === "reconnect") {
         setConnectedOverrides((prev) => ({ ...prev, [id]: true }));
         setResolvedWarnings((prev) => ({ ...prev, [id]: true }));
+        toast.push({
+          tone: "success",
+          label: `${platform} reconnected`,
+          detail: "You can now broadcast to this destination.",
+        });
       } else if (action.kind === "rotate") {
         setResolvedWarnings((prev) => ({ ...prev, [id]: true }));
+        toast.push({
+          tone: "success",
+          label: `${platform} stream key rotated`,
+          detail: "Next expires in 90 days.",
+        });
       } else if (action.kind === "lower-quality") {
-        cycleQuality(id);
+        const current = qualityIndex[id] ?? 0;
+        const dest = DESTINATIONS.find((d) => d.id === id);
+        if (dest && current < dest.qualities.length - 1) {
+          setQualityIndex((prev) => ({ ...prev, [id]: current + 1 }));
+        }
       }
       setResolveState((prev) => ({ ...prev, [id]: "done" }));
     }, 500);
@@ -190,8 +206,6 @@ export default function StreamPage() {
     setPostStream(null);
   };
   const onProceedAnyway = () => {
-    // Same as onStart but bypasses over-capacity gate (documented separately
-    // via the "Go live anyway" button in the remedy callout).
     if (enabledCount === 0) return;
     setCountdown(3);
     setPhase("counting");
@@ -246,8 +260,14 @@ export default function StreamPage() {
             delta: saved,
             postFixNeeded: needed - saved,
             detail: `Reduce ${d.platform} to ${alt.quality} to fit (−${saved.toFixed(1)} Mbps)`,
-            apply: () =>
-              setQualityIndex((prev) => ({ ...prev, [d.id]: nextIdx })),
+            apply: () => {
+              setQualityIndex((prev) => ({ ...prev, [d.id]: nextIdx }));
+              toast.push({
+                tone: "success",
+                label: `Reduced ${d.platform} to ${alt.quality}`,
+                detail: `Saved ${saved.toFixed(1)} Mbps · now fits upload.`,
+              });
+            },
           };
         }
       }
@@ -270,14 +290,19 @@ export default function StreamPage() {
         delta: biggest.bitrate,
         postFixNeeded: needed - biggest.bitrate,
         detail: `Disable ${biggest.d.platform} to fit (−${biggest.bitrate.toFixed(1)} Mbps)`,
-        apply: () =>
-          setEnabled((prev) => ({ ...prev, [biggest.d.id]: false })),
+        apply: () => {
+          setEnabled((prev) => ({ ...prev, [biggest.d.id]: false }));
+          toast.push({
+            tone: "success",
+            label: `${biggest.d.platform} disabled`,
+            detail: `Saved ${biggest.bitrate.toFixed(1)} Mbps.`,
+          });
+        },
       };
     }
     return undefined;
-  }, [destinations, enabled, qualityIndex]);
+  }, [destinations, enabled, qualityIndex, toast]);
 
-  // Last-stream data — for preflight summary
   const lastStream = postStream
     ? {
         duration: postStream.duration,
@@ -294,12 +319,31 @@ export default function StreamPage() {
           when: "yesterday",
         };
 
+  const currentOverrideDest = overrideForId
+    ? destinations.find((d) => d.id === overrideForId) ?? null
+    : null;
+
+  const onRetestUpload = () => {
+    toast.push({
+      tone: "info",
+      label: "Running speed test…",
+      detail: "Measuring upload capacity.",
+      duration: 2000,
+    });
+    window.setTimeout(() => {
+      toast.push({
+        tone: "success",
+        label: "Speed test complete",
+        detail: "Upload cap · 8.4 Mbps (no change).",
+      });
+    }, 2200);
+  };
+
   return (
     <>
       <TopBar liveState={liveState} />
 
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-6 py-6 md:px-10 md:py-8">
-        {/* Post-stream banner — persistent entry to summary */}
         <AnimatePresence initial={false}>
           {phase === "offline" && postStream && (
             <PostStreamBanner
@@ -310,7 +354,6 @@ export default function StreamPage() {
           )}
         </AnimatePresence>
 
-        {/* Pre-flight summary */}
         <motion.div variants={fadeUp} initial="hidden" animate="visible">
           <PreFlightSummary
             phase={phase}
@@ -320,6 +363,7 @@ export default function StreamPage() {
             qualityIndex={qualityIndex}
             firstTime={firstTime}
             lastStream={lastStream}
+            uploadSource={{ label: "speed test 2m ago", onRetest: onRetestUpload }}
             remedy={remedy}
             onStart={onStart}
             onCancel={onCancel}
@@ -329,7 +373,6 @@ export default function StreamPage() {
           />
         </motion.div>
 
-        {/* Destinations */}
         <motion.section
           variants={stagger}
           initial="hidden"
@@ -381,17 +424,18 @@ export default function StreamPage() {
                 destination={d}
                 enabled={!!enabled[d.id]}
                 qualityIndex={qualityIndex[d.id] ?? 0}
+                override={destOverrides[d.id]}
                 warningActive={!resolvedWarnings[d.id]}
                 resolveState={resolveState[d.id] ?? "idle"}
                 onToggle={toggle}
-                onCycleQuality={cycleQuality}
+                onSetQuality={setQuality}
                 onWarningAction={handleWarningAction}
+                onOpenOverride={(id) => setOverrideForId(id)}
               />
             ))}
           </motion.div>
         </motion.section>
 
-        {/* Utility footer — health + details (preview moves out when offline) */}
         <motion.section variants={fadeUp} initial="hidden" animate="visible">
           <UtilityFooter
             phase={phase}
@@ -423,6 +467,34 @@ export default function StreamPage() {
         open={summaryOpen}
         onClose={() => setSummaryOpen(false)}
         data={postStream}
+      />
+      <DestinationOverrideModal
+        open={overrideForId !== null}
+        destination={currentOverrideDest}
+        override={overrideForId ? destOverrides[overrideForId] : undefined}
+        defaults={{ title, description, category }}
+        onClose={() => setOverrideForId(null)}
+        onSave={(id, next) => {
+          setDestOverrides((prev) => ({ ...prev, [id]: next }));
+          const platform = DESTINATIONS.find((d) => d.id === id)?.platform ?? "";
+          toast.push({
+            tone: "success",
+            label: `${platform} details updated`,
+            detail: "Will apply to this destination only.",
+          });
+        }}
+        onClear={(id) => {
+          setDestOverrides((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          const platform = DESTINATIONS.find((d) => d.id === id)?.platform ?? "";
+          toast.push({
+            tone: "info",
+            label: `${platform} reverted to shared details`,
+          });
+        }}
       />
     </>
   );
@@ -487,7 +559,6 @@ function PostStreamBanner({
   );
 }
 
-/* Utility footer — health + details only when offline. Preview moves into summary. */
 function UtilityFooter({
   phase,
   title,
@@ -546,7 +617,6 @@ function UtilityFooter({
         )}
       </AnimatePresence>
 
-      {/* Full preview ONLY when live. Offline doesn't need the preview row. */}
       {showLivePreview && (
         <>
           <div className="h-px bg-hairline" />
@@ -574,6 +644,9 @@ function DetailsForm({
 }) {
   return (
     <div className="flex flex-col gap-4">
+      <p className="text-[0.75rem] text-fg-subtle -mt-1">
+        Shared defaults — override per destination from any tile's settings button.
+      </p>
       <div className="flex flex-col gap-1.5">
         <label
           htmlFor="stream-title"
@@ -602,7 +675,9 @@ function DetailsForm({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <span className="text-[0.75rem] font-medium text-fg-muted">Category</span>
+        <span className="text-[0.75rem] font-medium text-fg-muted">
+          Category
+        </span>
         <div className="flex flex-wrap gap-1.5">
           {CATEGORIES.map((c) => {
             const active = c === category;

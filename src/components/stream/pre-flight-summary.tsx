@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Clock, Eye, Video, Wand, AlertTriangle } from "lucide-react";
+import { Clock, Eye, Video, Wand, AlertTriangle, RefreshCw } from "lucide-react";
 import { GoLiveButton, type StreamPhase } from "@/components/stream/go-live-button";
 import { cn } from "@/lib/utils";
 import { springSoft, springSnap, easeOutExpo } from "@/lib/motion";
@@ -30,6 +30,8 @@ type PreFlightSummaryProps = {
   qualityIndex: Record<string, number>;
   firstTime: boolean;
   lastStream?: { duration: string; peakViewers: number; deltaPct: number; when: string };
+  /** Source attribution for the upload cap — e.g., "speed test 2m ago". */
+  uploadSource?: { label: string; onRetest?: () => void };
   onStart: () => void;
   onCancel: () => void;
   onEnd: () => void;
@@ -46,6 +48,7 @@ export function PreFlightSummary({
   qualityIndex,
   firstTime,
   lastStream,
+  uploadSource,
   onStart,
   onCancel,
   onEnd,
@@ -116,9 +119,10 @@ export function PreFlightSummary({
             overBy={overBy}
             remedyTargetId={remedyHover ? remedy?.destinationId : undefined}
             previewNeeded={remedyHover ? remedy?.postFixNeeded : undefined}
+            uploadSource={uploadSource}
           />
 
-          {/* Remedy callout */}
+          {/* Remedy callout — two equal-weight paths with explicit tradeoffs */}
           <AnimatePresence initial={false}>
             {overBudget && remedy && (
               <motion.div
@@ -129,20 +133,15 @@ export function PreFlightSummary({
                 transition={{ duration: 0.25, ease: easeOutExpo }}
                 className="overflow-hidden"
               >
-                <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-warn/30 bg-warn/[0.06] px-3 py-2">
-                  <span className="inline-flex items-center gap-2 text-[0.875rem] text-fg-primary min-w-0">
+                <div className="rounded-[var(--radius-md)] border border-warn/30 bg-warn/[0.06] px-3 py-3">
+                  <div className="flex items-center gap-2 mb-2.5">
                     <Wand className="size-3.5 text-warn shrink-0" />
-                    <span className="truncate">{remedy.detail}</span>
-                  </span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={onProceedAnyway}
-                      className="inline-flex items-center h-7 px-2.5 rounded-[var(--radius-sm)] text-[0.75rem] font-medium text-fg-muted hover:text-fg-primary hover:bg-white/[0.04] transition-colors"
-                      title="Go live despite over-capacity (stream may drop frames)"
-                    >
-                      Go live anyway
-                    </button>
+                    <span className="text-[0.8125rem] text-fg-primary">
+                      Upload is tight — choose how to proceed:
+                    </span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {/* Path A — Reduce quality */}
                     <button
                       type="button"
                       onClick={remedy.apply}
@@ -150,9 +149,38 @@ export function PreFlightSummary({
                       onMouseLeave={() => setRemedyHover(false)}
                       onFocus={() => setRemedyHover(true)}
                       onBlur={() => setRemedyHover(false)}
-                      className="inline-flex items-center h-7 px-3 rounded-[var(--radius-sm)] text-[0.75rem] font-medium bg-warn/20 text-warn border border-warn/40 hover:bg-warn/30 transition-colors"
+                      className={cn(
+                        "group/fix flex flex-col items-start gap-1 rounded-[var(--radius-sm)]",
+                        "border border-brand-500/30 bg-brand-500/[0.08] px-3 py-2.5",
+                        "hover:border-brand-500/50 hover:bg-brand-500/[0.12] transition-colors text-left"
+                      )}
                     >
-                      Apply fix
+                      <span className="text-[0.8125rem] font-medium text-fg-primary">
+                        {remedy.kind === "disable"
+                          ? `Disable ${remedy.destinationName}`
+                          : `Reduce ${remedy.destinationName}`}
+                      </span>
+                      <span className="text-[0.6875rem] text-fg-muted">
+                        Fits budget · {remedy.detail.replace(/^(Reduce|Disable)\s\S+\s/i, "").replace(/^to\s/, "→ ")}
+                      </span>
+                    </button>
+
+                    {/* Path B — Proceed anyway */}
+                    <button
+                      type="button"
+                      onClick={onProceedAnyway}
+                      className={cn(
+                        "group/anyway flex flex-col items-start gap-1 rounded-[var(--radius-sm)]",
+                        "border border-hairline-strong bg-white/[0.03] px-3 py-2.5",
+                        "hover:border-hairline-strong hover:bg-white/[0.06] transition-colors text-left"
+                      )}
+                    >
+                      <span className="text-[0.8125rem] font-medium text-fg-primary">
+                        Go live anyway
+                      </span>
+                      <span className="text-[0.6875rem] text-fg-muted">
+                        Accept dropped frames on {remedy.destinationName}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -311,6 +339,7 @@ function SegmentedUploadBar({
   overBy,
   remedyTargetId,
   previewNeeded,
+  uploadSource,
 }: {
   destinations: Destination[];
   qualityIndex: Record<string, number>;
@@ -319,6 +348,7 @@ function SegmentedUploadBar({
   overBy: number;
   remedyTargetId?: string;
   previewNeeded?: number;
+  uploadSource?: { label: string; onRetest?: () => void };
 }) {
   const overBudget = needed > cap;
   const displayedNeeded = previewNeeded ?? needed;
@@ -459,32 +489,52 @@ function SegmentedUploadBar({
         </AnimatePresence>
       </div>
 
-      {/* Legend below — for narrow segments where inline label hides */}
-      {segments.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-fg-muted">
-          {segments.map((s) => (
-            <span key={s.id} className="inline-flex items-center gap-1.5">
-              <span
-                className="size-2 rounded-sm shrink-0"
-                style={{ background: s.color }}
-                aria-hidden
-              />
-              <span>
-                {s.platform}{" "}
-                <span className="text-fg-subtle tabular-nums">
-                  {s.bitrate.toFixed(1)}
+      {/* Legend + attribution row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[0.6875rem]">
+        {segments.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-fg-muted">
+            {segments.map((s) => (
+              <span key={s.id} className="inline-flex items-center gap-1.5">
+                <span
+                  className="size-2 rounded-sm shrink-0"
+                  style={{ background: s.color }}
+                  aria-hidden
+                />
+                <span>
+                  {s.platform}{" "}
+                  <span className="text-fg-subtle tabular-nums">
+                    {s.bitrate.toFixed(1)}
+                  </span>
                 </span>
               </span>
-            </span>
-          ))}
-          {overBudget && !previewing && (
-            <span className="inline-flex items-center gap-1.5 text-warn">
-              <span className="size-2 rounded-sm bg-live" aria-hidden />
-              over {overBy.toFixed(1)}
-            </span>
-          )}
-        </div>
-      )}
+            ))}
+            {overBudget && !previewing && (
+              <span className="inline-flex items-center gap-1.5 text-warn">
+                <span className="size-2 rounded-sm bg-live" aria-hidden />
+                over {overBy.toFixed(1)}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span />
+        )}
+        {uploadSource && (
+          <span className="inline-flex items-center gap-1.5 text-fg-subtle">
+            <span>Cap from {uploadSource.label}</span>
+            {uploadSource.onRetest && (
+              <button
+                type="button"
+                onClick={uploadSource.onRetest}
+                className="inline-flex items-center gap-1 hover:text-fg-primary transition-colors"
+                aria-label="Retest upload"
+              >
+                <RefreshCw className="size-2.5" />
+                Retest
+              </button>
+            )}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
