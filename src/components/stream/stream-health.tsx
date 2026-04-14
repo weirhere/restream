@@ -12,10 +12,15 @@ type HealthMetric = {
   label: string;
   value: string;
   unit?: string;
-  trend: number[]; // rolling values, last is current
+  trend: number[];
   icon: React.ComponentType<{ className?: string }>;
   tone: Tone;
-  threshold?: { value: number; operator: "lt" | "gt"; hint: string };
+  /** Threshold drawn as dashed line on sparkline. */
+  threshold?: {
+    value: number;
+    /** Which side of the line is unhealthy — `above` = alert when trend exceeds value. */
+    direction: "above" | "below";
+  };
 };
 
 const METRICS: HealthMetric[] = [
@@ -27,7 +32,7 @@ const METRICS: HealthMetric[] = [
     trend: [22, 28, 31, 38, 42, 35, 30, 34, 37, 34],
     icon: Activity,
     tone: "ok",
-    threshold: { value: 75, operator: "lt", hint: "OK under 75%" },
+    threshold: { value: 75, direction: "above" },
   },
   {
     key: "upload",
@@ -37,17 +42,17 @@ const METRICS: HealthMetric[] = [
     trend: [6, 7, 7.5, 8, 9, 8.2, 7.9, 8.4, 8.6, 8.4],
     icon: Upload,
     tone: "ok",
-    threshold: { value: 5, operator: "gt", hint: "Need >5 Mbps" },
+    threshold: { value: 5, direction: "below" },
   },
   {
     key: "dropped",
     label: "Dropped",
     value: "12",
-    unit: "f",
+    unit: "frames",
     trend: [0, 0, 1, 3, 2, 4, 8, 10, 9, 12],
     icon: AlertTriangle,
     tone: "warn",
-    threshold: { value: 5, operator: "lt", hint: "Ideal under 5" },
+    threshold: { value: 5, direction: "above" },
   },
   {
     key: "latency",
@@ -57,7 +62,7 @@ const METRICS: HealthMetric[] = [
     trend: [180, 185, 190, 200, 205, 210, 215, 220, 218, 212],
     icon: Gauge,
     tone: "ok",
-    threshold: { value: 300, operator: "lt", hint: "OK under 300ms" },
+    threshold: { value: 300, direction: "above" },
   },
 ];
 
@@ -67,18 +72,20 @@ const toneColor: Record<Tone, string> = {
   bad: "#ff4757",
 };
 
-const toneLabel: Record<Tone, string> = {
-  ok: "Healthy",
-  warn: "Watch",
-  bad: "Issue",
-};
-
 export function StreamHealth() {
+  const issueCount = METRICS.filter((m) => m.tone !== "ok").length;
   const worst = METRICS.reduce<Tone>((acc, m) => {
     if (m.tone === "bad") return "bad";
     if (m.tone === "warn" && acc !== "bad") return "warn";
     return acc;
   }, "ok");
+
+  const rollupLabel =
+    issueCount === 0
+      ? "All healthy"
+      : issueCount === 1
+        ? "1 issue"
+        : `${issueCount} issues`;
 
   return (
     <div
@@ -97,11 +104,11 @@ export function StreamHealth() {
           }}
           aria-hidden
         />
-        <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-fg-muted">
-          {toneLabel[worst]}
+        <span className="text-[0.8125rem] font-medium text-fg-primary">
+          {rollupLabel}
         </span>
       </div>
-      <div className="flex items-center gap-4 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
         {METRICS.map((m) => (
           <MetricInline key={m.key} metric={m} />
         ))}
@@ -114,14 +121,9 @@ function MetricInline({ metric }: { metric: HealthMetric }) {
   const Icon = metric.icon;
   const color = toneColor[metric.tone];
   return (
-    <motion.div
-      className="flex items-center gap-2.5 min-w-0 group cursor-default"
-      title={metric.threshold?.hint}
-    >
+    <div className="flex items-center gap-2.5 min-w-0 group cursor-default">
       <Icon className="size-3.5 text-fg-subtle shrink-0" aria-hidden />
-      <span className="text-fg-muted text-[0.75rem] shrink-0">
-        {metric.label}
-      </span>
+      <span className="text-fg-muted text-[0.75rem] shrink-0">{metric.label}</span>
       <span
         className="font-medium tabular-nums shrink-0"
         style={{ color: metric.tone === "ok" ? "var(--fg-primary)" : color }}
@@ -136,27 +138,37 @@ function MetricInline({ metric }: { metric: HealthMetric }) {
       <Sparkline
         values={metric.trend}
         color={color}
-        className="w-12 h-4 shrink-0 opacity-80 group-hover:opacity-100"
+        threshold={metric.threshold}
+        tone={metric.tone}
+        className="w-14 h-5 shrink-0"
       />
-    </motion.div>
+    </div>
   );
 }
 
 function Sparkline({
   values,
   color,
+  threshold,
+  tone,
   className,
 }: {
   values: number[];
   color: string;
+  threshold?: HealthMetric["threshold"];
+  tone: Tone;
   className?: string;
 }) {
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
   const w = 100;
   const h = 24;
+
+  // include the threshold in the scale so it's visible
+  const allValues = [...values, ...(threshold ? [threshold.value] : [])];
+  const max = Math.max(...allValues);
+  const min = Math.min(...allValues);
+  const range = max - min || 1;
   const step = w / (values.length - 1);
+
   const pts = values.map((v, i) => {
     const x = i * step;
     const y = h - ((v - min) / range) * h;
@@ -166,13 +178,32 @@ function Sparkline({
   const lastX = (values.length - 1) * step;
   const lastY = h - ((values[values.length - 1] - min) / range) * h;
 
+  const thresholdY = threshold
+    ? h - ((threshold.value - min) / range) * h
+    : null;
+
+  // Dot color uses tone — if breached, red/amber matches rollup
+  const dotColor = tone === "ok" ? color : color;
+
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
-      className={cn("h-4", className)}
+      className={cn("h-5", className)}
       preserveAspectRatio="none"
       aria-hidden
     >
+      {thresholdY !== null && (
+        <line
+          x1={0}
+          x2={w}
+          y1={thresholdY}
+          y2={thresholdY}
+          stroke="rgba(255,255,255,0.18)"
+          strokeWidth="0.75"
+          strokeDasharray="2 2"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
       <polyline
         points={poly}
         fill="none"
@@ -180,8 +211,9 @@ function Sparkline({
         strokeWidth="1.25"
         strokeLinecap="round"
         strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
       />
-      <circle cx={lastX} cy={lastY} r="1.5" fill={color} />
+      <circle cx={lastX} cy={lastY} r="1.75" fill={dotColor} />
     </svg>
   );
 }
