@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Clock, Eye, Wand } from "lucide-react";
 import { GoLiveButton, type StreamPhase } from "@/components/stream/go-live-button";
 import { cn } from "@/lib/utils";
+import { springSoft, springSnap, easeOutExpo } from "@/lib/motion";
 import type { Destination } from "@/components/stream/destination-card";
 
 export const UPLOAD_MBPS = 8.4;
@@ -13,10 +14,14 @@ export type FitRemedy = {
   kind: "lower-quality" | "disable";
   destinationId: string;
   destinationName: string;
-  detail: string; // human-friendly: "Reduce Twitch to 720p60 (−2.0 Mbps)"
-  delta: number; // Mbps saved
+  detail: string;
+  /** Post-fix needed-bitrate — used by hover-preview on the Apply button. */
+  postFixNeeded: number;
+  delta: number;
   apply: () => void;
 };
+
+type StatusTone = "idle" | "ready" | "warn" | "live";
 
 type PreFlightSummaryProps = {
   phase: StreamPhase;
@@ -48,18 +53,23 @@ export function PreFlightSummary({
   }, 0);
   const overBudget = needed > UPLOAD_MBPS;
   const overBy = Math.max(0, needed - UPLOAD_MBPS);
-  const underPct = Math.min((needed / UPLOAD_MBPS) * 100, 100);
 
-  const status =
+  // hover-preview state for "Apply fix"
+  const [remedyHover, setRemedyHover] = React.useState(false);
+  const displayedNeeded = remedyHover && remedy ? remedy.postFixNeeded : needed;
+  const displayedOverBudget = displayedNeeded > UPLOAD_MBPS;
+  const displayedOverBy = Math.max(0, displayedNeeded - UPLOAD_MBPS);
+
+  const status: { label: string; tone: StatusTone } =
     phase === "live"
-      ? { label: "Broadcasting", tone: "live" as const }
+      ? { label: "Broadcasting", tone: "live" }
       : phase === "counting"
-        ? { label: "Starting in", tone: "warn" as const }
+        ? { label: "Starting in", tone: "warn" }
         : enabledList.length === 0
-          ? { label: "Add a destination to start", tone: "idle" as const }
+          ? { label: "Add a destination to start", tone: "idle" }
           : overBudget
-            ? { label: "Upload over capacity", tone: "warn" as const }
-            : { label: "Ready to broadcast", tone: "ready" as const };
+            ? { label: "Upload over capacity", tone: "warn" }
+            : { label: "Ready to broadcast", tone: "ready" };
 
   return (
     <div
@@ -83,8 +93,9 @@ export function PreFlightSummary({
       />
 
       <div className="relative grid gap-5 p-5 md:grid-cols-[1fr_auto] md:items-center md:gap-8 md:p-6">
-        {/* LEFT column: status truth */}
+        {/* LEFT column */}
         <div className="flex flex-col gap-4 min-w-0">
+          {/* status label */}
           <div className="flex items-center gap-2">
             <StatusDot tone={status.tone} />
             <span className="text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-fg-muted">
@@ -92,7 +103,7 @@ export function PreFlightSummary({
             </span>
           </div>
 
-          {/* Chip row */}
+          {/* chip row */}
           <div className="flex flex-wrap items-center gap-2 min-h-[32px]">
             <AnimatePresence mode="popLayout">
               {enabledList.length === 0 ? (
@@ -115,7 +126,7 @@ export function PreFlightSummary({
                       initial={{ opacity: 0, scale: 0.8, y: -4 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.8, y: 4 }}
-                      transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                      transition={springSnap}
                       className="inline-flex items-center gap-2 rounded-full border border-hairline bg-white/[0.04] pl-1.5 pr-3 h-8"
                     >
                       <span
@@ -129,11 +140,11 @@ export function PreFlightSummary({
                           {d.icon}
                         </span>
                       </span>
-                      <span className="text-[0.8125rem] font-medium text-fg-primary">
+                      <span className="text-[0.75rem] font-medium text-fg-primary">
                         {d.platform}
                       </span>
                       <span className="text-[0.75rem] text-fg-subtle tabular-nums">
-                        {q.bitrate.toFixed(1)}
+                        {q.bitrate.toFixed(1)} Mbps
                       </span>
                     </motion.div>
                   );
@@ -142,16 +153,16 @@ export function PreFlightSummary({
             </AnimatePresence>
           </div>
 
-          {/* Upload bar — two visual regions when over */}
+          {/* Upload bar with inline over-by label */}
           <UploadBar
-            needed={needed}
+            needed={displayedNeeded}
             available={UPLOAD_MBPS}
-            overBudget={overBudget}
-            overBy={overBy}
-            underPct={underPct}
+            overBudget={displayedOverBudget}
+            overBy={displayedOverBy}
+            previewing={remedyHover}
           />
 
-          {/* Remedy — only when over */}
+          {/* Remedy callout — shown only when over */}
           <AnimatePresence initial={false}>
             {overBudget && remedy && (
               <motion.div
@@ -159,19 +170,23 @@ export function PreFlightSummary({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.25, ease: easeOutExpo }}
                 className="overflow-hidden"
               >
                 <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-warn/30 bg-warn/[0.06] px-3 py-2">
-                  <span className="inline-flex items-center gap-2 text-[0.8125rem] text-fg-primary min-w-0">
+                  <span className="inline-flex items-center gap-2 text-[0.75rem] text-fg-primary min-w-0">
                     <Wand className="size-3.5 text-warn shrink-0" />
                     <span className="truncate">{remedy.detail}</span>
                   </span>
                   <button
                     type="button"
                     onClick={remedy.apply}
+                    onMouseEnter={() => setRemedyHover(true)}
+                    onMouseLeave={() => setRemedyHover(false)}
+                    onFocus={() => setRemedyHover(true)}
+                    onBlur={() => setRemedyHover(false)}
                     className={cn(
-                      "inline-flex items-center h-7 px-3 rounded-[8px]",
+                      "inline-flex items-center h-7 px-3 rounded-[var(--radius-sm)]",
                       "text-[0.75rem] font-medium shrink-0",
                       "bg-warn/20 text-warn border border-warn/40",
                       "hover:bg-warn/30 transition-colors"
@@ -192,7 +207,7 @@ export function PreFlightSummary({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Eye className="size-3.5" />
-              342 peak viewers
+              342 peak (+12% over last stream)
             </span>
           </div>
         </div>
@@ -233,22 +248,56 @@ export function PreFlightSummary({
   );
 }
 
-function StatusDot({ tone }: { tone: "idle" | "ready" | "warn" | "live" }) {
-  const color =
-    tone === "live"
-      ? "#ff4757"
-      : tone === "warn"
-        ? "#ffb547"
-        : tone === "ready"
-          ? "#7c5cff"
-          : "#6a6b84";
+function StatusDot({ tone }: { tone: StatusTone }) {
+  /* ─────────────────────────────────────────────────────────────
+   * STATUS DOT TONE HIERARCHY
+   *   idle   — no glow, 8px neutral
+   *   ready  — subtle violet glow, 8px
+   *   warn   — amber glow, 10px (larger = more attention)
+   *   live   — red + pulsing ring, 10px (most alive)
+   * ──────────────────────────────────────────────────────────── */
+  if (tone === "live") {
+    return (
+      <span className="relative inline-block size-2.5 shrink-0" aria-hidden>
+        <span
+          className="absolute inset-0 rounded-full"
+          style={{
+            background: "#ff4757",
+            boxShadow: "0 0 14px 2px rgba(255,71,87,0.8)",
+          }}
+        />
+        <span className="absolute inset-0 rounded-full bg-live animate-ping opacity-40" />
+      </span>
+    );
+  }
+  if (tone === "warn") {
+    return (
+      <span
+        className="inline-block size-2.5 rounded-full shrink-0"
+        style={{
+          background: "#ffb547",
+          boxShadow: "0 0 12px 1px rgba(255,181,71,0.55)",
+        }}
+        aria-hidden
+      />
+    );
+  }
+  if (tone === "ready") {
+    return (
+      <span
+        className="inline-block size-2 rounded-full shrink-0"
+        style={{
+          background: "#7c5cff",
+          boxShadow: "0 0 10px rgba(124,92,255,0.45)",
+        }}
+        aria-hidden
+      />
+    );
+  }
+  // idle
   return (
     <span
-      className="size-2 rounded-full shrink-0"
-      style={{
-        background: color,
-        boxShadow: tone === "idle" ? "none" : `0 0 10px ${color}`,
-      }}
+      className="inline-block size-2 rounded-full shrink-0 bg-fg-subtle/60"
       aria-hidden
     />
   );
@@ -259,37 +308,45 @@ function UploadBar({
   available,
   overBudget,
   overBy,
-  underPct,
+  previewing,
 }: {
   needed: number;
   available: number;
   overBudget: boolean;
   overBy: number;
-  underPct: number;
+  previewing: boolean;
 }) {
+  const underPct = Math.min((needed / available) * 100, 100);
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between text-[0.75rem]">
         <span className="text-fg-muted">
           Upload{" "}
-          <span
+          <motion.span
             className={cn(
               "font-medium tabular-nums",
               overBudget ? "text-warn" : "text-fg-primary"
             )}
+            animate={{ opacity: previewing ? 0.7 : 1 }}
           >
             {needed.toFixed(1)}
-          </span>
+          </motion.span>
           <span className="text-fg-subtle"> / {available.toFixed(1)} Mbps</span>
+          {overBudget && (
+            <span className="text-warn tabular-nums ml-1.5">
+              · over by {overBy.toFixed(1)}
+            </span>
+          )}
         </span>
-        {overBudget && (
-          <span className="inline-flex items-center gap-1 text-warn font-medium tabular-nums">
-            Over by {overBy.toFixed(1)} Mbps
+        {previewing && (
+          <span className="text-[0.6875rem] uppercase tracking-[0.08em] text-fg-subtle">
+            Preview
           </span>
         )}
       </div>
-      <div className="relative flex items-center gap-1 h-3">
-        {/* "within budget" track — fixed-width rail representing upload cap */}
+      <div className="relative flex items-center gap-1 h-4">
+        {/* within-budget rail */}
         <div className="relative flex-1 h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
           <motion.div
             className={cn(
@@ -300,18 +357,18 @@ function UploadBar({
             )}
             initial={false}
             animate={{ width: `${underPct}%` }}
-            transition={{ type: "spring", stiffness: 240, damping: 32 }}
+            transition={springSoft}
             style={{ boxShadow: "0 0 12px rgba(124,92,255,0.3)" }}
           />
         </div>
 
-        {/* cap tick */}
+        {/* fat cap tick — 2px wide × 16px tall in contrasting neutral */}
         <span
-          className="relative w-px h-3 bg-fg-subtle/80 shrink-0"
-          aria-hidden
+          className="relative w-[2px] h-4 rounded-full bg-white/50 shrink-0"
+          aria-label="Upload cap"
         />
 
-        {/* overage segment — only rendered when over */}
+        {/* overage segment — only when over */}
         <AnimatePresence initial={false}>
           {overBudget && (
             <motion.div
@@ -322,7 +379,7 @@ function UploadBar({
                 opacity: 1,
               }}
               exit={{ width: 0, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 220, damping: 30 }}
+              transition={springSoft}
               className="h-1.5 rounded-full bg-gradient-to-r from-warn to-live shrink-0"
               style={{ boxShadow: "0 0 16px rgba(255,71,87,0.35)" }}
               aria-hidden

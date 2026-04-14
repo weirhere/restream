@@ -43,6 +43,14 @@
   --color-success: var(--success);
   --color-warn: var(--warn);
 
+  /* Platform brand tokens — referenced for destination accents */
+  --color-platform-twitch: var(--platform-twitch);
+  --color-platform-youtube: var(--platform-youtube);
+  --color-platform-facebook: var(--platform-facebook);
+  --color-platform-x: var(--platform-x);
+  --color-platform-linkedin: var(--platform-linkedin);
+  --color-platform-kick: var(--platform-kick);
+
   /* Borders */
   --color-hairline: var(--hairline);
   --color-hairline-strong: var(--hairline-strong);
@@ -131,6 +139,14 @@
   --success: #3ddc97;
   --warn: #ffb547;
 
+  /* Platform brand hexes — source of truth for destination accents */
+  --platform-twitch: #9146ff;
+  --platform-youtube: #ff0033;
+  --platform-facebook: #1877f2;
+  --platform-x: #e5e5ea;
+  --platform-linkedin: #0a66c2;
+  --platform-kick: #53fc18;
+
   /* Borders */
   --hairline: rgba(255, 255, 255, 0.08);
   --hairline-strong: rgba(255, 255, 255, 0.14);
@@ -183,6 +199,12 @@
   --live: #ff4757;
   --success: #3ddc97;
   --warn: #ffb547;
+  --platform-twitch: #9146ff;
+  --platform-youtube: #ff0033;
+  --platform-facebook: #1877f2;
+  --platform-x: #e5e5ea;
+  --platform-linkedin: #0a66c2;
+  --platform-kick: #53fc18;
   --hairline: rgba(255, 255, 255, 0.08);
   --hairline-strong: rgba(255, 255, 255, 0.14);
   --background: var(--bg-base);

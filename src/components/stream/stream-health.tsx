@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "motion/react";
 import { Activity, Upload, AlertTriangle, Gauge } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,10 +14,8 @@ type HealthMetric = {
   trend: number[];
   icon: React.ComponentType<{ className?: string }>;
   tone: Tone;
-  /** Threshold drawn as dashed line on sparkline. */
   threshold?: {
     value: number;
-    /** Which side of the line is unhealthy — `above` = alert when trend exceeds value. */
     direction: "above" | "below";
   };
 };
@@ -72,7 +69,12 @@ const toneColor: Record<Tone, string> = {
   bad: "#ff4757",
 };
 
-export function StreamHealth() {
+type StreamHealthProps = {
+  /** When true, render inside a borderless container (used by UtilityFooter). */
+  flush?: boolean;
+};
+
+export function StreamHealth({ flush = false }: StreamHealthProps) {
   const issueCount = METRICS.filter((m) => m.tone !== "ok").length;
   const worst = METRICS.reduce<Tone>((acc, m) => {
     if (m.tone === "bad") return "bad";
@@ -90,9 +92,10 @@ export function StreamHealth() {
   return (
     <div
       className={cn(
-        "flex items-center gap-5 rounded-[var(--radius-md)]",
-        "border border-hairline bg-white/[0.02] px-4 py-3",
-        "text-[0.8125rem]"
+        "flex items-center gap-5 text-[0.8125rem]",
+        flush
+          ? "px-4 py-3"
+          : "rounded-[var(--radius-md)] border border-hairline bg-white/[0.02] px-4 py-3"
       )}
     >
       <div className="flex items-center gap-2 pr-5 border-r border-hairline shrink-0">
@@ -120,10 +123,26 @@ export function StreamHealth() {
 function MetricInline({ metric }: { metric: HealthMetric }) {
   const Icon = metric.icon;
   const color = toneColor[metric.tone];
+  const isIssue = metric.tone !== "ok";
   return (
     <div className="flex items-center gap-2.5 min-w-0 group cursor-default">
-      <Icon className="size-3.5 text-fg-subtle shrink-0" aria-hidden />
-      <span className="text-fg-muted text-[0.75rem] shrink-0">{metric.label}</span>
+      <Icon
+        className={cn(
+          "size-3.5 shrink-0",
+          isIssue ? "" : "text-fg-subtle"
+        )}
+        style={isIssue ? { color } : undefined}
+        aria-hidden
+      />
+      <span
+        className={cn(
+          "text-[0.75rem] shrink-0",
+          isIssue ? "font-medium" : "text-fg-muted"
+        )}
+        style={isIssue ? { color } : undefined}
+      >
+        {metric.label}
+      </span>
       <span
         className="font-medium tabular-nums shrink-0"
         style={{ color: metric.tone === "ok" ? "var(--fg-primary)" : color }}
@@ -139,7 +158,6 @@ function MetricInline({ metric }: { metric: HealthMetric }) {
         values={metric.trend}
         color={color}
         threshold={metric.threshold}
-        tone={metric.tone}
         className="w-14 h-5 shrink-0"
       />
     </div>
@@ -150,19 +168,15 @@ function Sparkline({
   values,
   color,
   threshold,
-  tone,
   className,
 }: {
   values: number[];
   color: string;
   threshold?: HealthMetric["threshold"];
-  tone: Tone;
   className?: string;
 }) {
   const w = 100;
   const h = 24;
-
-  // include the threshold in the scale so it's visible
   const allValues = [...values, ...(threshold ? [threshold.value] : [])];
   const max = Math.max(...allValues);
   const min = Math.min(...allValues);
@@ -181,9 +195,6 @@ function Sparkline({
   const thresholdY = threshold
     ? h - ((threshold.value - min) / range) * h
     : null;
-
-  // Dot color uses tone — if breached, red/amber matches rollup
-  const dotColor = tone === "ok" ? color : color;
 
   return (
     <svg
@@ -213,7 +224,7 @@ function Sparkline({
         strokeLinejoin="round"
         vectorEffect="non-scaling-stroke"
       />
-      <circle cx={lastX} cy={lastY} r="1.75" fill={dotColor} />
+      <circle cx={lastX} cy={lastY} r="1.75" fill={color} />
     </svg>
   );
 }

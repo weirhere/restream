@@ -12,7 +12,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { fadeUp } from "@/lib/motion";
+import { fadeUp, revealDuration, easeOutExpo } from "@/lib/motion";
 
 export type QualityOption = { quality: string; bitrate: number };
 
@@ -36,31 +36,44 @@ export type Destination = {
   warning?: DestinationWarning;
 };
 
+type ResolveState = "idle" | "working" | "done";
+
 type DestinationCardProps = {
   destination: Destination;
   enabled: boolean;
   qualityIndex: number;
-  warningActive: boolean; // false once user resolves it
+  warningActive: boolean;
+  resolveState: ResolveState;
   onToggle: (id: string, next: boolean) => void;
   onCycleQuality: (id: string) => void;
   onWarningAction: (id: string, action: DestinationWarning["action"]) => void;
 };
+
+/* ─────────────────────────────────────────────────────────────
+ * Uniform tile height = 136px
+ * (header row + quality pill + footer slot, footer always reserves space)
+ * ──────────────────────────────────────────────────────────── */
+const TILE_HEIGHT = 136;
 
 export function DestinationCard({
   destination,
   enabled,
   qualityIndex,
   warningActive,
+  resolveState,
   onToggle,
   onCycleQuality,
   onWarningAction,
 }: DestinationCardProps) {
-  const { id, platform, color, connected, qualities, icon, warning } = destination;
-  const currentQuality = qualities[Math.min(qualityIndex, qualities.length - 1)];
+  const { id, platform, color, connected, qualities, icon, warning } =
+    destination;
+  const currentQuality =
+    qualities[Math.min(qualityIndex, qualities.length - 1)];
   const canCycle = qualities.length > 1 && connected;
 
-  const showWarning = warningActive && warning !== undefined;
   const disconnected = !connected;
+  const showWarning = warningActive && warning !== undefined;
+  const showFooter = showWarning || disconnected;
 
   const WarningIcon =
     warning?.kind === "key"
@@ -75,21 +88,20 @@ export function DestinationCard({
         interactive={!disconnected}
         onClick={() => !disconnected && onToggle(id, !enabled)}
         className={cn(
-          "gap-0 py-0",
+          "flex flex-col gap-0 p-0",
           disconnected && "opacity-75",
           enabled &&
             "border-brand-500/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_0_0_1px_rgba(124,92,255,0.3),0_0_40px_-10px_rgba(124,92,255,0.5)]"
         )}
+        style={{ minHeight: TILE_HEIGHT }}
       >
-        <CardContent className="flex flex-col gap-3 py-4 px-4">
+        {/* MAIN content — flex-1 so it fills remaining space above the footer slot */}
+        <CardContent className="flex flex-1 flex-col gap-3 p-4">
           {/* platform + switch */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div
-                className={cn(
-                  "relative flex size-9 shrink-0 items-center justify-center rounded-[10px]",
-                  "border border-hairline overflow-hidden"
-                )}
+                className="relative flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-hairline overflow-hidden"
                 style={{
                   background: `linear-gradient(135deg, ${color}33 0%, ${color}11 100%)`,
                 }}
@@ -105,7 +117,7 @@ export function DestinationCard({
                   {icon}
                 </span>
               </div>
-              <span className="text-[0.9375rem] font-medium text-fg-primary truncate">
+              <span className="text-[0.875rem] font-medium text-fg-primary truncate">
                 {platform}
               </span>
             </div>
@@ -123,7 +135,7 @@ export function DestinationCard({
             </div>
           </div>
 
-          {/* quality cycler */}
+          {/* quality cycler — first-class pill control */}
           <button
             type="button"
             onClick={(e) => {
@@ -132,39 +144,40 @@ export function DestinationCard({
             }}
             disabled={!canCycle}
             className={cn(
-              "group/q inline-flex items-center justify-between w-fit gap-2",
-              "h-7 -ml-1 px-2 rounded-[8px] text-[0.8125rem] tabular-nums",
-              "text-fg-muted transition-colors",
-              canCycle && "hover:bg-white/[0.04] hover:text-fg-primary cursor-pointer",
-              !canCycle && "cursor-default"
+              "group/q inline-flex items-center gap-1.5 w-fit",
+              "h-8 px-2.5 rounded-[var(--radius-sm)]",
+              "text-[0.75rem] tabular-nums text-fg-muted",
+              "border border-hairline bg-white/[0.02]",
+              "transition-colors",
+              canCycle &&
+                "hover:bg-white/[0.05] hover:border-hairline-strong hover:text-fg-primary cursor-pointer",
+              !canCycle && "cursor-default opacity-70"
             )}
             title={canCycle ? "Cycle quality" : undefined}
+            aria-label={`Quality: ${currentQuality.quality} at ${currentQuality.bitrate} Mbps${canCycle ? ". Tap to cycle." : ""}`}
           >
-            <span>
-              <span className="text-fg-primary font-medium">
-                {currentQuality.quality}
-              </span>
-              <span className="text-fg-subtle mx-1.5">·</span>
-              <span>{currentQuality.bitrate.toFixed(1)} Mbps</span>
+            <span className="text-fg-primary font-medium">
+              {currentQuality.quality}
             </span>
+            <span className="text-fg-subtle">·</span>
+            <span>{currentQuality.bitrate.toFixed(1)} Mbps</span>
             {canCycle && (
-              <ChevronDown className="size-3.5 opacity-0 group-hover/q:opacity-70 transition-opacity" />
+              <ChevronDown className="size-3 opacity-50 group-hover/q:opacity-90 transition-opacity" />
             )}
           </button>
         </CardContent>
 
-        {/* warning footer — only rendered when active */}
-        <AnimatePresence initial={false}>
-          {(showWarning || disconnected) && (
-            <motion.div
-              key="warning-row"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden"
-            >
-              <div
+        {/* FOOTER slot — always reserves space so tile heights match across the grid.
+            Rendered empty when there's no warning/disconnect. */}
+        <div className="shrink-0" style={{ minHeight: 1 }}>
+          <AnimatePresence initial={false} mode="wait">
+            {showFooter ? (
+              <motion.div
+                key="warn-row"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: revealDuration, ease: easeOutExpo }}
                 className={cn(
                   "flex items-center justify-between gap-2 px-4 py-2.5",
                   "border-t border-hairline",
@@ -195,6 +208,7 @@ export function DestinationCard({
                 </span>
                 <button
                   type="button"
+                  disabled={resolveState === "working"}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (disconnected) {
@@ -207,20 +221,47 @@ export function DestinationCard({
                     }
                   }}
                   className={cn(
-                    "inline-flex items-center h-7 px-2.5 rounded-[8px]",
+                    "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-sm)]",
                     "text-[0.75rem] font-medium shrink-0",
                     "border border-hairline bg-white/[0.04] text-fg-primary",
-                    "hover:bg-white/[0.08] transition-colors"
+                    "hover:bg-white/[0.08] transition-colors",
+                    "disabled:opacity-60 disabled:cursor-not-allowed"
                   )}
                 >
-                  {disconnected ? "Reconnect" : (warning as DestinationWarning).action.label}
+                  {resolveState === "working" && (
+                    <span
+                      className="size-3 rounded-full border border-fg-muted/60 border-t-fg-primary animate-spin"
+                      aria-hidden
+                    />
+                  )}
+                  <span>
+                    {resolveState === "working"
+                      ? getWorkingLabel(
+                          disconnected
+                            ? "reconnect"
+                            : (warning as DestinationWarning).action.kind
+                        )
+                      : disconnected
+                        ? "Reconnect"
+                        : (warning as DestinationWarning).action.label}
+                  </span>
                 </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty-footer"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="h-[41px]" /* matches footer row height (~41px incl. border-t) */
+                aria-hidden
+              />
+            )}
+          </AnimatePresence>
+        </div>
 
-        {/* active sweep */}
+        {/* active sweep at tile bottom */}
         <AnimatePresence>
           {enabled && (
             <motion.div
@@ -228,8 +269,8 @@ export function DestinationCard({
               initial={{ opacity: 0, scaleX: 0.4 }}
               animate={{ opacity: 1, scaleX: 1 }}
               exit={{ opacity: 0, scaleX: 0.4 }}
-              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute inset-x-4 bottom-0 h-[2px] origin-center bg-gradient-to-r from-transparent via-brand-500 to-transparent"
+              transition={{ duration: 0.35, ease: easeOutExpo }}
+              className="pointer-events-none absolute inset-x-4 bottom-0 h-[2px] origin-center bg-gradient-to-r from-transparent via-brand-500 to-transparent"
               aria-hidden
             />
           )}
@@ -239,7 +280,18 @@ export function DestinationCard({
   );
 }
 
-// Helper to pick warning-icon component from kind
+function getWorkingLabel(kind: DestinationWarning["action"]["kind"]) {
+  switch (kind) {
+    case "rotate":
+      return "Rotating…";
+    case "reconnect":
+      return "Reconnecting…";
+    case "lower-quality":
+      return "Applying…";
+  }
+}
+
+// Helper export: map warning kind to icon (used in other surfaces)
 export function warningIconFor(kind: WarningKind) {
   switch (kind) {
     case "key":

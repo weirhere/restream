@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, Video } from "lucide-react";
+import { ChevronDown, Video, CheckCircle2, X as XIconClose } from "lucide-react";
 
 import { TopBar } from "@/components/app/topbar";
 import type { LiveState } from "@/components/app/live-indicator";
@@ -32,7 +32,7 @@ import {
   KickIcon,
   XIcon,
 } from "@/components/stream/brand-icons";
-import { fadeUp, stagger, staggerTight } from "@/lib/motion";
+import { fadeUp, stagger, staggerTight, easeOutExpo } from "@/lib/motion";
 import type { StreamPhase } from "@/components/stream/go-live-button";
 
 const CATEGORIES = [
@@ -58,6 +58,15 @@ const DESTINATIONS: Destination[] = DESTINATIONS_BASE.map((d) => ({
   icon: ICONS[d.id],
 }));
 
+type ResolveState = "idle" | "working" | "done";
+
+type PostStream = {
+  endedAt: number;
+  destinations: string[];
+  duration: string;
+  peakViewers: number;
+};
+
 export default function StreamPage() {
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({
     twitch: true,
@@ -78,6 +87,9 @@ export default function StreamPage() {
   const [resolvedWarnings, setResolvedWarnings] = React.useState<
     Record<string, boolean>
   >({});
+  const [resolveState, setResolveState] = React.useState<
+    Record<string, ResolveState>
+  >({});
   const [connectedOverrides, setConnectedOverrides] = React.useState<
     Record<string, boolean>
   >({});
@@ -94,9 +106,11 @@ export default function StreamPage() {
   const [phase, setPhase] = React.useState<StreamPhase>("offline");
   const [countdown, setCountdown] = React.useState(3);
 
+  // Post-stream state — set briefly when a stream ends, so offline != pre-flight.
+  const [postStream, setPostStream] = React.useState<PostStream | null>(null);
+
   const enabledCount = Object.values(enabled).filter(Boolean).length;
 
-  // merge connection overrides (for "Reconnect" action)
   const destinations = React.useMemo(
     () =>
       DESTINATIONS.map((d) => ({
@@ -106,7 +120,6 @@ export default function StreamPage() {
     [connectedOverrides]
   );
 
-  // enabled-first sort for the grid
   const sortedDestinations = React.useMemo(() => {
     return [...destinations].sort((a, b) => {
       const ae = enabled[a.id] ? 1 : 0;
@@ -130,21 +143,26 @@ export default function StreamPage() {
     });
   }
 
+  // Warning action with a 500ms "working…" intermediate state.
   function handleWarningAction(
     id: string,
     action: DestinationWarning["action"]
   ) {
-    if (action.kind === "reconnect") {
-      setConnectedOverrides((prev) => ({ ...prev, [id]: true }));
-      setResolvedWarnings((prev) => ({ ...prev, [id]: true }));
-    } else if (action.kind === "rotate") {
-      setResolvedWarnings((prev) => ({ ...prev, [id]: true }));
-    } else if (action.kind === "lower-quality") {
-      cycleQuality(id);
-    }
+    setResolveState((prev) => ({ ...prev, [id]: "working" }));
+    window.setTimeout(() => {
+      if (action.kind === "reconnect") {
+        setConnectedOverrides((prev) => ({ ...prev, [id]: true }));
+        setResolvedWarnings((prev) => ({ ...prev, [id]: true }));
+      } else if (action.kind === "rotate") {
+        setResolvedWarnings((prev) => ({ ...prev, [id]: true }));
+      } else if (action.kind === "lower-quality") {
+        cycleQuality(id);
+      }
+      setResolveState((prev) => ({ ...prev, [id]: "done" }));
+    }, 500);
   }
 
-  // Countdown driver
+  // Countdown
   React.useEffect(() => {
     if (phase !== "counting") return;
     if (countdown <= 0) {
@@ -159,12 +177,24 @@ export default function StreamPage() {
     if (enabledCount === 0) return;
     setCountdown(3);
     setPhase("counting");
+    // starting a new stream clears any stale post-stream state
+    setPostStream(null);
   };
   const onCancel = () => {
     setPhase("offline");
     setCountdown(3);
   };
   const onEnd = () => {
+    // Capture a post-stream snapshot so the offline state knows we just finished.
+    const destNames = destinations
+      .filter((d) => enabled[d.id])
+      .map((d) => d.platform);
+    setPostStream({
+      endedAt: Date.now(),
+      destinations: destNames,
+      duration: "42s",
+      peakViewers: 287,
+    });
     setPhase("offline");
     setCountdown(3);
   };
@@ -172,7 +202,7 @@ export default function StreamPage() {
   const liveState: LiveState =
     phase === "live" ? "live" : phase === "counting" ? "starting" : "offline";
 
-  // Compute remedy when over-capacity
+  // Compute remedy (with postFixNeeded for hover-preview)
   const remedy = React.useMemo<FitRemedy | undefined>(() => {
     const needed = destinations
       .filter((d) => enabled[d.id])
@@ -182,7 +212,8 @@ export default function StreamPage() {
       );
     if (needed <= UPLOAD_MBPS) return undefined;
 
-    // Strategy 1: can we drop ONE enabled destination to its next-lower quality and fit?
+    // strategy 1: smallest-quality-step that fits
+    let best: FitRemedy | undefined;
     for (const d of destinations) {
       if (!enabled[d.id]) continue;
       const curIdx = qualityIndex[d.id] ?? 0;
@@ -190,12 +221,15 @@ export default function StreamPage() {
         const cur = d.qualities[curIdx];
         const alt = d.qualities[nextIdx];
         const saved = cur.bitrate - alt.bitrate;
-        if (needed - saved <= UPLOAD_MBPS) {
-          return {
+        if (needed - saved > UPLOAD_MBPS) continue;
+        // prefer the smallest step that still fits (least quality loss)
+        if (!best || saved < best.delta) {
+          best = {
             kind: "lower-quality",
             destinationId: d.id,
             destinationName: d.platform,
             delta: saved,
+            postFixNeeded: needed - saved,
             detail: `Reduce ${d.platform} to ${alt.quality} to fit (−${saved.toFixed(1)} Mbps)`,
             apply: () =>
               setQualityIndex((prev) => ({ ...prev, [d.id]: nextIdx })),
@@ -203,8 +237,9 @@ export default function StreamPage() {
         }
       }
     }
+    if (best) return best;
 
-    // Strategy 2: disable the largest enabled destination
+    // strategy 2: disable biggest
     const enabledSorted = destinations
       .filter((d) => enabled[d.id])
       .map((d) => ({
@@ -219,6 +254,7 @@ export default function StreamPage() {
         destinationId: biggest.d.id,
         destinationName: biggest.d.platform,
         delta: biggest.bitrate,
+        postFixNeeded: needed - biggest.bitrate,
         detail: `Disable ${biggest.d.platform} to fit (−${biggest.bitrate.toFixed(1)} Mbps)`,
         apply: () =>
           setEnabled((prev) => ({ ...prev, [biggest.d.id]: false })),
@@ -232,6 +268,16 @@ export default function StreamPage() {
       <TopBar liveState={liveState} />
 
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-6 py-6 md:px-10 md:py-8">
+        {/* Post-stream recap banner */}
+        <AnimatePresence initial={false}>
+          {phase === "offline" && postStream && (
+            <PostStreamBanner
+              data={postStream}
+              onDismiss={() => setPostStream(null)}
+            />
+          )}
+        </AnimatePresence>
+
         {/* Pre-flight summary */}
         <motion.div variants={fadeUp} initial="hidden" animate="visible">
           <PreFlightSummary
@@ -266,7 +312,7 @@ export default function StreamPage() {
               >
                 Destinations
               </h2>
-              <span className="text-[0.8125rem] text-fg-subtle tabular-nums">
+              <span className="text-[0.75rem] text-fg-subtle tabular-nums">
                 {enabledCount} of {DESTINATIONS.length}
               </span>
             </div>
@@ -288,6 +334,7 @@ export default function StreamPage() {
                 enabled={!!enabled[d.id]}
                 qualityIndex={qualityIndex[d.id] ?? 0}
                 warningActive={!resolvedWarnings[d.id]}
+                resolveState={resolveState[d.id] ?? "idle"}
                 onToggle={toggle}
                 onCycleQuality={cycleQuality}
                 onWarningAction={handleWarningAction}
@@ -296,140 +343,235 @@ export default function StreamPage() {
           </motion.div>
         </motion.section>
 
-        {/* Stream health */}
-        <motion.section
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          aria-label="Stream health"
-        >
-          <StreamHealth />
-        </motion.section>
-
-        {/* Stream details — accordion */}
-        <motion.section
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          className="flex flex-col gap-2"
-          aria-label="Stream details"
-        >
-          <button
-            type="button"
-            onClick={() => setDetailsOpen((v) => !v)}
-            className={cn(
-              "flex items-center gap-3 rounded-[var(--radius-md)]",
-              "border border-hairline bg-white/[0.02] px-4 py-3",
-              "text-left transition-colors hover:bg-white/[0.04]"
-            )}
-            aria-expanded={detailsOpen}
+        {/* Utility footer — health + details + preview, one dense band */}
+        <motion.section variants={fadeUp} initial="hidden" animate="visible">
+          <UtilityFooter
+            phase={phase}
+            title={title}
+            category={category}
+            detailsOpen={detailsOpen}
+            onToggleDetails={() => setDetailsOpen((v) => !v)}
           >
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
-                {title}
-              </span>
-              <span className="text-[0.75rem] text-fg-subtle">{category}</span>
-            </div>
-            <ChevronDown
-              className={cn(
-                "size-4 text-fg-subtle transition-transform shrink-0",
-                detailsOpen && "rotate-180"
-              )}
-            />
-          </button>
-
-          <AnimatePresence initial={false}>
             {detailsOpen && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden"
-              >
-                <Card className="mt-1">
-                  <CardContent className="flex flex-col gap-4 py-5">
-                    <div className="flex flex-col gap-1.5">
-                      <label
-                        htmlFor="stream-title"
-                        className="text-[0.75rem] font-medium text-fg-muted"
-                      >
-                        Title
-                      </label>
-                      <Input
-                        id="stream-title"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label
-                        htmlFor="stream-desc"
-                        className="text-[0.75rem] font-medium text-fg-muted"
-                      >
-                        Description
-                      </label>
-                      <Textarea
-                        id="stream-desc"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[0.75rem] font-medium text-fg-muted">
-                        Category
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {CATEGORIES.map((c) => {
-                          const active = c === category;
-                          return (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => setCategory(c)}
-                              className={
-                                active
-                                  ? "h-8 px-3 rounded-full text-[0.8125rem] font-medium border border-brand-500/40 bg-brand-500/10 text-brand-300 shadow-[0_0_20px_-6px_rgba(124,92,255,0.5)] transition-all"
-                                  : "h-8 px-3 rounded-full text-[0.8125rem] font-medium border border-hairline bg-white/[0.03] text-fg-muted hover:text-fg-primary hover:bg-white/[0.06] transition-colors"
-                              }
-                            >
-                              {c}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+              <DetailsForm
+                title={title}
+                setTitle={setTitle}
+                description={description}
+                setDescription={setDescription}
+                category={category}
+                setCategory={setCategory}
+              />
             )}
-          </AnimatePresence>
-        </motion.section>
-
-        {/* Preview — collapsed by default, expands when live */}
-        <motion.section
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          aria-label="Stream preview"
-        >
-          <PreviewPanel phase={phase} />
+          </UtilityFooter>
         </motion.section>
       </main>
     </>
   );
 }
 
-function PreviewPanel({ phase }: { phase: StreamPhase }) {
-  const expanded = phase === "live";
+/* ─────────────────────────────────────────────────────────────
+ * Post-stream banner — visible when offline AND postStream is set.
+ * ──────────────────────────────────────────────────────────── */
+function PostStreamBanner({
+  data,
+  onDismiss,
+}: {
+  data: PostStream;
+  onDismiss: () => void;
+}) {
+  const destinations = data.destinations.join(", ");
+  return (
+    <motion.div
+      key="post-stream"
+      initial={{ opacity: 0, y: -8, height: 0 }}
+      animate={{ opacity: 1, y: 0, height: "auto" }}
+      exit={{ opacity: 0, y: -8, height: 0 }}
+      transition={{ duration: 0.25, ease: easeOutExpo }}
+      className="overflow-hidden"
+    >
+      <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-success/25 bg-success/[0.06] px-4 py-3">
+        <CheckCircle2 className="size-4 text-success shrink-0" />
+        <div className="flex flex-col min-w-0 flex-1 leading-tight">
+          <span className="text-[0.8125rem] font-medium text-fg-primary">
+            Stream ended · {data.duration} · {data.peakViewers} peak viewers
+          </span>
+          <span className="text-[0.75rem] text-fg-subtle truncate">
+            Broadcast to {destinations}. Summary ready.
+          </span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center h-7 px-3 rounded-[var(--radius-sm)] text-[0.75rem] font-medium border border-hairline bg-white/[0.04] text-fg-primary hover:bg-white/[0.08] transition-colors"
+        >
+          View summary
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="inline-flex items-center justify-center size-7 rounded-[var(--radius-sm)] text-fg-subtle hover:text-fg-primary hover:bg-white/[0.04] transition-colors"
+          aria-label="Dismiss"
+        >
+          <XIconClose className="size-3.5" />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
 
+/* ─────────────────────────────────────────────────────────────
+ * UtilityFooter — single container grouping health + details + preview.
+ *
+ *   Row 1: Stream health rail (borderless, flush)
+ *   Row 2: Details accordion header (+ expand)
+ *   Row 3: Preview source strip (or full preview when live)
+ *
+ * Shared border + bg so the three rows read as one utility band.
+ * ──────────────────────────────────────────────────────────── */
+function UtilityFooter({
+  phase,
+  title,
+  category,
+  detailsOpen,
+  onToggleDetails,
+  children,
+}: {
+  phase: StreamPhase;
+  title: string;
+  category: string;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col rounded-[var(--radius-lg)] border border-hairline bg-white/[0.02] overflow-hidden">
+      {/* Row 1: Stream health */}
+      <StreamHealth flush />
+      <div className="h-px bg-hairline" />
+
+      {/* Row 2: Details accordion trigger */}
+      <button
+        type="button"
+        onClick={onToggleDetails}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3 text-left transition-colors",
+          "hover:bg-white/[0.02]"
+        )}
+        aria-expanded={detailsOpen}
+      >
+        <div className="flex flex-col min-w-0 flex-1 leading-tight">
+          <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
+            {title}
+          </span>
+          <span className="text-[0.75rem] text-fg-subtle">{category}</span>
+        </div>
+        <ChevronDown
+          className={cn(
+            "size-4 text-fg-subtle transition-transform shrink-0",
+            detailsOpen && "rotate-180"
+          )}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {detailsOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: easeOutExpo }}
+            className="overflow-hidden border-t border-hairline"
+          >
+            <div className="px-4 py-5">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="h-px bg-hairline" />
+
+      {/* Row 3: Preview — collapsed row OR full preview when live */}
+      <PreviewRow phase={phase} />
+    </div>
+  );
+}
+
+function DetailsForm({
+  title,
+  setTitle,
+  description,
+  setDescription,
+  category,
+  setCategory,
+}: {
+  title: string;
+  setTitle: (v: string) => void;
+  description: string;
+  setDescription: (v: string) => void;
+  category: string;
+  setCategory: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor="stream-title"
+          className="text-[0.75rem] font-medium text-fg-muted"
+        >
+          Title
+        </label>
+        <Input
+          id="stream-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor="stream-desc"
+          className="text-[0.75rem] font-medium text-fg-muted"
+        >
+          Description
+        </label>
+        <Textarea
+          id="stream-desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[0.75rem] font-medium text-fg-muted">
+          Category
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {CATEGORIES.map((c) => {
+            const active = c === category;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategory(c)}
+                className={
+                  active
+                    ? "h-8 px-3 rounded-full text-[0.75rem] font-medium border border-brand-500/40 bg-brand-500/10 text-brand-300 shadow-[0_0_20px_-6px_rgba(124,92,255,0.5)] transition-all"
+                    : "h-8 px-3 rounded-full text-[0.75rem] font-medium border border-hairline bg-white/[0.03] text-fg-muted hover:text-fg-primary hover:bg-white/[0.06] transition-colors"
+                }
+              >
+                {c}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewRow({ phase }: { phase: StreamPhase }) {
+  const expanded = phase === "live";
   if (!expanded) {
     return (
-      <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-hairline bg-white/[0.02] px-4 py-3">
-        <Video className="size-4 text-fg-subtle shrink-0" />
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Video className="size-4 text-fg-subtle shrink-0" aria-hidden />
         <div className="flex flex-col min-w-0 flex-1 leading-tight">
           <span className="text-[0.8125rem] font-medium text-fg-primary">
             Camera + screen share
@@ -440,7 +582,7 @@ function PreviewPanel({ phase }: { phase: StreamPhase }) {
         </div>
         <button
           type="button"
-          className="inline-flex items-center h-7 px-2.5 rounded-[8px] text-[0.75rem] font-medium border border-hairline bg-white/[0.04] text-fg-primary hover:bg-white/[0.08] transition-colors"
+          className="inline-flex items-center h-7 px-2.5 rounded-[var(--radius-sm)] text-[0.75rem] font-medium border border-hairline bg-white/[0.04] text-fg-primary hover:bg-white/[0.08] transition-colors"
         >
           Configure source
         </button>
@@ -449,13 +591,7 @@ function PreviewPanel({ phase }: { phase: StreamPhase }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[1.125rem] font-semibold tracking-tight">Preview</h2>
-        <span className="text-[0.75rem] text-fg-subtle tabular-nums">
-          00:00:42 · 1080p · 60fps
-        </span>
-      </div>
+    <div className="p-4">
       <div
         className="relative aspect-[16/7] overflow-hidden rounded-[var(--radius-md)] border border-hairline"
         style={{
