@@ -82,7 +82,6 @@ export function GoLiveButton({
                 "0 0 0 1px rgba(124,92,255,0.25), 0 12px 40px -8px rgba(124,92,255,0.55), 0 0 0 0 rgba(124,92,255,0.4)",
                 "0 0 0 1px rgba(124,92,255,0.45), 0 16px 56px -4px rgba(124,92,255,0.75), 0 0 0 14px rgba(124,92,255,0)",
               ],
-              scale: [1, 1.012, 1],
             }
           : phase === "live"
             ? {
@@ -95,11 +94,10 @@ export function GoLiveButton({
               ? {
                   boxShadow:
                     "0 0 0 1px rgba(255,181,71,0.35), 0 8px 24px -6px rgba(255,181,71,0.45)",
-                  scale: 1,
                 }
               : {
-                  boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 4px 16px -4px rgba(0,0,0,0.4)",
-                  scale: 1,
+                  boxShadow:
+                    "0 0 0 1px rgba(255,255,255,0.08), 0 4px 16px -4px rgba(0,0,0,0.4)",
                 }
       }
       transition={{
@@ -112,8 +110,6 @@ export function GoLiveButton({
         repeatType: "loop",
         ease: "easeInOut",
       }}
-      whileHover={!disabled ? { y: -1 } : undefined}
-      whileTap={!disabled ? { y: 0, scale: 0.99 } : undefined}
     >
       {/* subtle top sheen */}
       <span
