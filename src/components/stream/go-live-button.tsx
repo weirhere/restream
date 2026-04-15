@@ -57,7 +57,6 @@ export function GoLiveButton({
       type="button"
       onClick={handleClick}
       disabled={disabled}
-      layout
       className={cn(
         "relative overflow-hidden select-none",
         "rounded-[var(--radius-lg)]",
@@ -66,7 +65,8 @@ export function GoLiveButton({
         "border border-white/10",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base",
-        isLg ? "min-w-[200px] h-14 px-7" : "min-w-[168px] h-11 px-5 text-sm",
+        // FIXED width — guarantees the button box never resizes between phases
+        isLg ? "w-[220px] h-14 px-7" : "w-[180px] h-11 px-5 text-sm",
         phase === "live"
           ? "bg-gradient-to-br from-live/90 to-[#d63747]"
           : phase === "counting"
@@ -138,9 +138,9 @@ export function GoLiveButton({
           ) : phase === "live" ? (
             <motion.span
               key="live"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="inline-flex items-center gap-2"
             >
@@ -150,9 +150,9 @@ export function GoLiveButton({
           ) : (
             <motion.span
               key="offline"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="inline-flex items-center gap-2"
             >
