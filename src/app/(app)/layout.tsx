@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Sidebar } from "@/components/app/sidebar";
+import { StreamsProvider } from "@/lib/streams-store";
 
 export default function AppLayout({
   children,
@@ -7,11 +8,13 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-screen w-full overflow-hidden">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        {children}
+    <StreamsProvider>
+      <div className="flex h-screen w-full overflow-hidden">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          {children}
+        </div>
       </div>
-    </div>
+    </StreamsProvider>
   );
 }
