@@ -27,7 +27,7 @@ type NavItem = {
 
 const primary: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Stream", href: "/stream", icon: Radio },
+  { label: "Streams", href: "/streams", icon: Radio },
   { label: "Destinations", href: "/destinations", icon: Tv2 },
   { label: "Recordings", href: "/recordings", icon: Film },
   { label: "Studio", href: "/studio", icon: Sparkles, badge: "Beta" },
@@ -65,8 +65,12 @@ export function Sidebar() {
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">
         <NavSection label="Workspace" items={primary} pathname={pathname} />
-        <div className="my-4 h-px bg-hairline" />
-        <NavSection label="Account" items={secondary} pathname={pathname} />
+        <NavSection
+          label="Account"
+          items={secondary}
+          pathname={pathname}
+          className="mt-3"
+        />
       </div>
 
       {/* user card */}
@@ -93,13 +97,15 @@ function NavSection({
   label,
   items,
   pathname,
+  className,
 }: {
   label: string;
   items: NavItem[];
   pathname: string;
+  className?: string;
 }) {
   return (
-    <div className="py-1">
+    <div className={cn("py-1", className)}>
       <div className="px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-fg-subtle">
         {label}
       </div>
@@ -113,7 +119,7 @@ function NavSection({
               {active && (
                 <motion.span
                   layoutId="nav-active-bar"
-                  className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[2px] rounded-full bg-gradient-brand shadow-[0_0_8px_rgba(124,92,255,0.8)]"
+                  className="absolute -left-3 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-gradient-brand shadow-[0_0_8px_rgba(124,92,255,0.8)]"
                   transition={{
                     type: "spring",
                     stiffness: 420,

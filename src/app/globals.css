@@ -43,6 +43,14 @@
   --color-success: var(--success);
   --color-warn: var(--warn);
 
+  /* Platform brand tokens — referenced for destination accents */
+  --color-platform-twitch: var(--platform-twitch);
+  --color-platform-youtube: var(--platform-youtube);
+  --color-platform-facebook: var(--platform-facebook);
+  --color-platform-x: var(--platform-x);
+  --color-platform-linkedin: var(--platform-linkedin);
+  --color-platform-kick: var(--platform-kick);
+
   /* Borders */
   --color-hairline: var(--hairline);
   --color-hairline-strong: var(--hairline-strong);
@@ -77,9 +85,9 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   /* Fonts */
-  --font-sans: var(--font-inter);
-  --font-heading: var(--font-inter);
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-sans-runtime);
+  --font-heading: var(--font-sans-runtime);
+  --font-mono: var(--font-mono-runtime);
 
   /* Radii */
   --radius-sm: 6px;
@@ -130,6 +138,14 @@
   --live: #ff4757;
   --success: #3ddc97;
   --warn: #ffb547;
+
+  /* Platform brand hexes — source of truth for destination accents */
+  --platform-twitch: #9146ff;
+  --platform-youtube: #ff0033;
+  --platform-facebook: #1877f2;
+  --platform-x: #e5e5ea;
+  --platform-linkedin: #0a66c2;
+  --platform-kick: #53fc18;
 
   /* Borders */
   --hairline: rgba(255, 255, 255, 0.08);
@@ -183,6 +199,12 @@
   --live: #ff4757;
   --success: #3ddc97;
   --warn: #ffb547;
+  --platform-twitch: #9146ff;
+  --platform-youtube: #ff0033;
+  --platform-facebook: #1877f2;
+  --platform-x: #e5e5ea;
+  --platform-linkedin: #0a66c2;
+  --platform-kick: #53fc18;
   --hairline: rgba(255, 255, 255, 0.08);
   --hairline-strong: rgba(255, 255, 255, 0.14);
   --background: var(--bg-base);
@@ -225,8 +247,9 @@
     height: 100%;
   }
   html {
-    font-family: var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto,
-      sans-serif;
+    /* Geist via next/font sets --font-sans-runtime on this element. */
+    font-family: var(--font-sans-runtime), system-ui, -apple-system,
+      "Segoe UI", Roboto, sans-serif;
     font-feature-settings: "cv11", "ss01", "ss03";
     letter-spacing: -0.01em;
   }
