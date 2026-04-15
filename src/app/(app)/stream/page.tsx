@@ -42,6 +42,7 @@ import { SourceConfigModal } from "@/components/stream/source-config-modal";
 import { StreamSummaryModal } from "@/components/stream/stream-summary-modal";
 import { DestinationOverrideModal } from "@/components/stream/destination-override-modal";
 import { useToast } from "@/components/ui/toast";
+import { Hint, GLOSSARY } from "@/components/ui/hint";
 
 const CATEGORIES = [
   "Just Chatting",
@@ -364,6 +365,11 @@ export default function StreamPage() {
             firstTime={firstTime}
             lastStream={lastStream}
             uploadSource={{ label: "speed test 2m ago", onRetest: onRetestUpload }}
+            audio={{
+              bitrateKbps: 192,
+              lufs: category === "Music" ? -14.2 : -18.0,
+              category,
+            }}
             remedy={remedy}
             onStart={onStart}
             onCancel={onCancel}
@@ -727,7 +733,12 @@ function LivePreview() {
         </div>
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[0.75rem] text-white/80">
           <span className="font-medium tabular-nums">Camera · Screen share</span>
-          <span className="tabular-nums">Audio -18 LUFS</span>
+          <span className="tabular-nums">
+            Audio -18{" "}
+            <Hint {...GLOSSARY.lufs} className="text-white/90">
+              LUFS
+            </Hint>
+          </span>
         </div>
       </div>
     </div>

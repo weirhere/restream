@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { MotionConfig } from "motion/react";
 import { ToastProvider } from "@/components/ui/toast";
+import { HintProvider } from "@/components/ui/hint";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,7 +30,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-bg-base text-fg-primary font-sans">
         <MotionConfig reducedMotion="user">
-          <ToastProvider>{children}</ToastProvider>
+          <HintProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </HintProvider>
         </MotionConfig>
       </body>
     </html>

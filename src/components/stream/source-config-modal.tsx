@@ -98,6 +98,13 @@ export function SourceConfigModal({
   return (
     <ModalShell open={open} onClose={onClose} title="Configure stream source">
       <div className="flex flex-col gap-5">
+        <div className="rounded-[var(--radius-md)] border border-hairline bg-white/[0.02] px-3 py-2.5">
+          <p className="text-[0.75rem] text-fg-muted leading-snug">
+            Restream forwards your stream from OBS, Streamlabs, or another
+            broadcast app. Set up scenes, overlays, and guests there — this
+            app handles the multi-destination forwarding.
+          </p>
+        </div>
         <SourceGroup
           kind="camera"
           label="Camera"

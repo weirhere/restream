@@ -2,13 +2,24 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Clock, Eye, Video, Wand, AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  Clock,
+  Eye,
+  Video,
+  Wand,
+  AlertTriangle,
+  RefreshCw,
+  Mic,
+} from "lucide-react";
 import { GoLiveButton, type StreamPhase } from "@/components/stream/go-live-button";
 import { cn } from "@/lib/utils";
 import { springSoft, springSnap, easeOutExpo } from "@/lib/motion";
+import { Hint, GLOSSARY } from "@/components/ui/hint";
 import type { Destination } from "@/components/stream/destination-card";
 
 export const UPLOAD_MBPS = 8.4;
+/** Audio bitrate included in the stream budget. 192 kbps ≈ 0.192 Mbps. */
+export const AUDIO_MBPS = 0.192;
 
 export type FitRemedy = {
   kind: "lower-quality" | "disable";
@@ -22,6 +33,15 @@ export type FitRemedy = {
 
 type StatusTone = "idle" | "ready" | "warn" | "live";
 
+export type AudioState = {
+  /** Audio bitrate in kbps, e.g., 192. */
+  bitrateKbps: number;
+  /** Current measured loudness. */
+  lufs: number;
+  /** The category context for LUFS target ("Music" -> -14, others -> -18). */
+  category: string;
+};
+
 type PreFlightSummaryProps = {
   phase: StreamPhase;
   countdownValue: number;
@@ -32,6 +52,7 @@ type PreFlightSummaryProps = {
   lastStream?: { duration: string; peakViewers: number; deltaPct: number; when: string };
   /** Source attribution for the upload cap — e.g., "speed test 2m ago". */
   uploadSource?: { label: string; onRetest?: () => void };
+  audio: AudioState;
   onStart: () => void;
   onCancel: () => void;
   onEnd: () => void;
@@ -39,6 +60,12 @@ type PreFlightSummaryProps = {
   onOpenSourceConfig: () => void;
   remedy?: FitRemedy;
 };
+
+/** Given a category, what LUFS target should we interpret against? */
+function lufsTargetFor(category: string): { target: number; label: string } {
+  if (category === "Music") return { target: -14, label: "music/streaming" };
+  return { target: -18, label: "talk/chat" };
+}
 
 export function PreFlightSummary({
   phase,
@@ -49,6 +76,7 @@ export function PreFlightSummary({
   firstTime,
   lastStream,
   uploadSource,
+  audio,
   onStart,
   onCancel,
   onEnd,
@@ -57,10 +85,12 @@ export function PreFlightSummary({
   remedy,
 }: PreFlightSummaryProps) {
   const enabledList = destinations.filter((d) => enabled[d.id]);
-  const needed = enabledList.reduce((s, d) => {
+  const videoNeeded = enabledList.reduce((s, d) => {
     const q = d.qualities[qualityIndex[d.id] ?? 0];
     return s + q.bitrate;
   }, 0);
+  // Audio is a shared contribution — one upload from the machine to Restream.
+  const needed = videoNeeded + AUDIO_MBPS;
   const overBudget = needed > UPLOAD_MBPS;
   const overBy = Math.max(0, needed - UPLOAD_MBPS);
 
@@ -114,13 +144,18 @@ export function PreFlightSummary({
           <SegmentedUploadBar
             destinations={enabledList}
             qualityIndex={qualityIndex}
+            videoNeeded={videoNeeded}
             needed={needed}
             cap={UPLOAD_MBPS}
             overBy={overBy}
+            audioMbps={AUDIO_MBPS}
             remedyTargetId={remedyHover ? remedy?.destinationId : undefined}
             previewNeeded={remedyHover ? remedy?.postFixNeeded : undefined}
             uploadSource={uploadSource}
           />
+
+          {/* Audio row — first-class surface for audio context */}
+          <AudioRow audio={audio} onOpenSourceConfig={onOpenSourceConfig} />
 
           {/* Remedy callout — two equal-weight paths with explicit tradeoffs */}
           <AnimatePresence initial={false}>
@@ -334,18 +369,22 @@ function StatusDot({ tone }: { tone: StatusTone }) {
 function SegmentedUploadBar({
   destinations,
   qualityIndex,
+  videoNeeded,
   needed,
   cap,
   overBy,
+  audioMbps,
   remedyTargetId,
   previewNeeded,
   uploadSource,
 }: {
   destinations: Destination[];
   qualityIndex: Record<string, number>;
+  videoNeeded: number;
   needed: number;
   cap: number;
   overBy: number;
+  audioMbps: number;
   remedyTargetId?: string;
   previewNeeded?: number;
   uploadSource?: { label: string; onRetest?: () => void };
@@ -398,7 +437,13 @@ function SegmentedUploadBar({
           >
             {displayedNeeded.toFixed(1)}
           </motion.span>
-          <span className="text-fg-subtle"> / {cap.toFixed(1)} Mbps</span>
+          <span className="text-fg-subtle">
+            {" "}
+            / {cap.toFixed(1)}{" "}
+            <Hint {...GLOSSARY.mbps} dotted>
+              Mbps
+            </Hint>
+          </span>
           {displayedOverBudget && (
             <span className="text-warn tabular-nums ml-1.5">
               · over by {displayedOverBy.toFixed(1)}
@@ -548,7 +593,6 @@ function SegmentLabel({
   bitrate: number;
   widthPct: number;
 }) {
-  // Hide inline label if segment is too narrow (e.g., < 18% of bar)
   if (widthPct < 18) return null;
   return (
     <span className="relative z-10 flex items-center justify-between h-full px-2 gap-2 text-[0.75rem] font-medium text-white/95 [text-shadow:0_1px_2px_rgba(0,0,0,0.4)]">
@@ -557,5 +601,71 @@ function SegmentLabel({
         {bitrate.toFixed(1)}
       </span>
     </span>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * AudioRow — surfaces audio config + LUFS interpretation as a
+ * peer to the video budget bar. Critical for music/podcast creators
+ * per usability research.
+ * ──────────────────────────────────────────────────────────── */
+function AudioRow({
+  audio,
+  onOpenSourceConfig,
+}: {
+  audio: AudioState;
+  onOpenSourceConfig: () => void;
+}) {
+  const { target, label: targetLabel } = lufsTargetFor(audio.category);
+  const delta = audio.lufs - target;
+  // within 2 LUFS of target = good; within 4 = ok; beyond = off
+  const lufsTone: "ok" | "warn" | "bad" =
+    Math.abs(delta) <= 2 ? "ok" : Math.abs(delta) <= 4 ? "warn" : "bad";
+  const toneColor =
+    lufsTone === "ok"
+      ? "text-success"
+      : lufsTone === "warn"
+        ? "text-warn"
+        : "text-live";
+  const toneDot =
+    lufsTone === "ok" ? "#3ddc97" : lufsTone === "warn" ? "#ffb547" : "#ff4757";
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenSourceConfig}
+      className={cn(
+        "group/audio flex items-center gap-3 rounded-[var(--radius-md)]",
+        "border border-hairline bg-white/[0.02] px-3 py-2",
+        "transition-colors hover:bg-white/[0.04] text-left"
+      )}
+      aria-label="Configure audio"
+    >
+      <Mic className="size-3.5 text-fg-subtle shrink-0 group-hover/audio:text-fg-muted" />
+      <span className="text-[0.75rem] text-fg-muted tabular-nums">
+        Audio {audio.bitrateKbps}
+        <span className="text-fg-subtle"> kbps</span>
+      </span>
+      <span className="text-fg-subtle">·</span>
+      <span className="inline-flex items-center gap-1.5 text-[0.75rem]">
+        <span
+          className="size-1.5 rounded-full"
+          style={{ background: toneDot, boxShadow: `0 0 6px ${toneDot}` }}
+          aria-hidden
+        />
+        <span className={cn("tabular-nums font-medium", toneColor)}>
+          {audio.lufs.toFixed(1)}{" "}
+          <Hint {...GLOSSARY.lufs} dotted className="text-fg-muted">
+            LUFS
+          </Hint>
+        </span>
+        <span className="text-fg-subtle">
+          · target {target} for {targetLabel}
+        </span>
+      </span>
+      <span className="ml-auto text-[0.6875rem] text-fg-subtle opacity-0 group-hover/audio:opacity-100 transition-opacity">
+        Adjust →
+      </span>
+    </button>
   );
 }

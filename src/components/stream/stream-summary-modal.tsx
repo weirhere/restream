@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Eye, TrendingUp, Film } from "lucide-react";
+import { Clock, Eye, TrendingUp, Film, Mic } from "lucide-react";
 import { ModalShell } from "@/components/stream/source-config-modal";
+import { cn } from "@/lib/utils";
+import { Hint, GLOSSARY } from "@/components/ui/hint";
 
 type SummaryData = {
   endedAt: number;
@@ -66,6 +68,9 @@ export function StreamSummaryModal({
             </div>
           </div>
 
+          {/* Audio — trend + consistency */}
+          <AudioTrendSection />
+
           {/* Placeholder: highlights / clips */}
           <div className="flex flex-col gap-2">
             <span className="text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-fg-muted">
@@ -96,6 +101,132 @@ export function StreamSummaryModal({
         </div>
       )}
     </ModalShell>
+  );
+}
+
+/* Post-stream audio: LUFS trend with target band, consistency read. */
+function AudioTrendSection() {
+  // Mock a 30-point LUFS trend. Mostly -18 target with a couple dips.
+  const trend = [
+    -18.2, -18.1, -17.9, -18.0, -18.3, -17.8, -19.1, -18.4, -18.1, -17.9,
+    -18.0, -18.2, -17.7, -17.9, -18.1, -19.5, -18.8, -18.2, -17.9, -18.0,
+    -18.3, -18.1, -17.8, -18.0, -18.2, -18.4, -18.1, -17.9, -18.0, -18.1,
+  ];
+  const avg = trend.reduce((s, v) => s + v, 0) / trend.length;
+  const min = Math.min(...trend);
+  const max = Math.max(...trend);
+  const target = -18;
+  const targetBand = 2; // ±2 LUFS around target is "good"
+
+  const inBandCount = trend.filter(
+    (v) => Math.abs(v - target) <= targetBand
+  ).length;
+  const consistencyPct = Math.round((inBandCount / trend.length) * 100);
+
+  const w = 300;
+  const h = 40;
+  const yMax = Math.max(max + 1, target + targetBand + 1);
+  const yMin = Math.min(min - 1, target - targetBand - 1);
+  const range = yMax - yMin;
+  const step = w / (trend.length - 1);
+  const pts = trend
+    .map((v, i) => {
+      const x = i * step;
+      const y = h - ((v - yMin) / range) * h;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+  const bandTopY = h - ((target + targetBand - yMin) / range) * h;
+  const bandBotY = h - ((target - targetBand - yMin) / range) * h;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[0.75rem] font-semibold uppercase tracking-[0.1em] text-fg-muted inline-flex items-center gap-2">
+          <Mic className="size-3" />
+          Audio
+        </span>
+        <span className="text-[0.6875rem] text-fg-subtle">Last 30 min</span>
+      </div>
+      <div className="rounded-[var(--radius-md)] border border-hairline bg-white/[0.02] px-4 py-3 flex flex-col gap-3">
+        <div className="flex items-center gap-4 flex-wrap text-[0.75rem]">
+          <span className="text-fg-muted">
+            Avg{" "}
+            <span className="text-fg-primary font-medium tabular-nums">
+              {avg.toFixed(1)}
+            </span>{" "}
+            <Hint {...GLOSSARY.lufs}>LUFS</Hint>
+          </span>
+          <span className="text-fg-subtle">·</span>
+          <span className="text-fg-muted tabular-nums">
+            range {min.toFixed(1)} → {max.toFixed(1)}
+          </span>
+          <span className="text-fg-subtle">·</span>
+          <span
+            className={cn(
+              "font-medium tabular-nums",
+              consistencyPct >= 85
+                ? "text-success"
+                : consistencyPct >= 70
+                  ? "text-warn"
+                  : "text-live"
+            )}
+          >
+            {consistencyPct}% in target band
+          </span>
+        </div>
+
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          className="w-full h-10"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          {/* Target band */}
+          <rect
+            x={0}
+            y={bandTopY}
+            width={w}
+            height={bandBotY - bandTopY}
+            fill="rgba(61,220,151,0.08)"
+          />
+          <line
+            x1={0}
+            x2={w}
+            y1={bandTopY}
+            y2={bandTopY}
+            stroke="rgba(61,220,151,0.35)"
+            strokeWidth="0.75"
+            strokeDasharray="2 2"
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={0}
+            x2={w}
+            y1={bandBotY}
+            y2={bandBotY}
+            stroke="rgba(61,220,151,0.35)"
+            strokeWidth="0.75"
+            strokeDasharray="2 2"
+            vectorEffect="non-scaling-stroke"
+          />
+          <polyline
+            points={pts}
+            fill="none"
+            stroke="#c3b4ff"
+            strokeWidth="1.25"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+
+        <div className="flex items-center justify-between text-[0.6875rem] text-fg-subtle">
+          <span>Green band = {target - targetBand} to {target + targetBand} LUFS</span>
+          <span>{inBandCount} / {trend.length} samples in range</span>
+        </div>
+      </div>
+    </div>
   );
 }
 

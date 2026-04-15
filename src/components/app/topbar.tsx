@@ -15,9 +15,14 @@ export function TopBar({ liveState }: { liveState?: LiveState }) {
       <div className="flex items-center gap-3 min-w-0">
         <span className="text-[0.8125rem] text-fg-subtle">Workspace</span>
         <span className="text-fg-subtle/60">/</span>
-        <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
-          Stream Control Center
-        </span>
+        <div className="flex flex-col leading-tight min-w-0">
+          <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
+            Stream Control Center
+          </span>
+          <span className="text-[0.6875rem] text-fg-subtle truncate hidden lg:inline">
+            Broadcast one stream to multiple platforms
+          </span>
+        </div>
       </div>
 
       <div className="relative ml-auto hidden md:block max-w-xs w-full">

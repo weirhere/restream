@@ -240,6 +240,13 @@ export function DestinationCard({
                       onWarningAction(id, warning.action);
                     }
                   }}
+                  title={
+                    disconnected
+                      ? "Reconnect this platform to broadcast to it again."
+                      : warning?.action.kind === "rotate"
+                        ? "Generate a new stream key. The old one stops working immediately; paste the new one into your broadcast app."
+                        : undefined
+                  }
                   className={cn(
                     "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[var(--radius-sm)]",
                     "text-[0.75rem] font-medium shrink-0",
