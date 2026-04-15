@@ -29,10 +29,9 @@ function Card({
         "py-5 text-sm text-card-foreground",
         "has-data-[slot=card-footer]:pb-0",
         "data-[size=sm]:gap-3 data-[size=sm]:py-4",
-        // interactive: hover lift + brand ring glow
-        "data-[interactive=true]:transition-[transform,box-shadow,border-color] data-[interactive=true]:duration-300 data-[interactive=true]:ease-out",
+        // interactive: border color shift + brand ring glow — no translate
+        "data-[interactive=true]:transition-[box-shadow,border-color] data-[interactive=true]:duration-300 data-[interactive=true]:ease-out",
         "data-[interactive=true]:cursor-pointer",
-        "data-[interactive=true]:hover:-translate-y-[2px]",
         "data-[interactive=true]:hover:border-hairline-strong",
         "data-[interactive=true]:hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_24px_60px_-18px_rgba(0,0,0,0.7),0_0_0_1px_rgba(124,92,255,0.25),0_12px_40px_-10px_rgba(124,92,255,0.35)]",
         className
