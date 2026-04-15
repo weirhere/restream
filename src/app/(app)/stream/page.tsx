@@ -145,15 +145,9 @@ export default function StreamPage() {
     [connectedOverrides]
   );
 
-  const sortedDestinations = React.useMemo(() => {
-    return [...destinations].sort((a, b) => {
-      const ae = enabled[a.id] ? 1 : 0;
-      const be = enabled[b.id] ? 1 : 0;
-      if (ae !== be) return be - ae;
-      if (a.connected !== b.connected) return a.connected ? -1 : 1;
-      return 0;
-    });
-  }, [destinations, enabled]);
+  // Render in fixed declaration order. Toggling on/off shouldn't shuffle
+  // the grid — the position of each tile is part of its identity.
+  const sortedDestinations = destinations;
 
   function toggle(id: string, next: boolean) {
     setEnabled((prev) => ({ ...prev, [id]: next }));
