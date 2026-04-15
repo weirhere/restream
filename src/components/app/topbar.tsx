@@ -10,7 +10,7 @@ import { LiveIndicator, type LiveState } from "@/components/app/live-indicator";
 export function TopBar({ liveState }: { liveState?: LiveState }) {
   return (
     <header
-      className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-hairline bg-bg-base/70 backdrop-blur-xl px-6"
+      className="sticky top-0 z-20 flex items-center gap-4 border-b border-hairline bg-bg-base/70 backdrop-blur-xl px-6 py-6"
     >
       <div className="flex items-center gap-3 min-w-0">
         <span className="text-[0.8125rem] text-fg-subtle">Workspace</span>
