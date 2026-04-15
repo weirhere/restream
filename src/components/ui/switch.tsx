@@ -23,9 +23,9 @@ function Switch({
         // UNCHECKED — dim, sunken "off metal"
         "data-unchecked:bg-black/40 data-unchecked:border-hairline",
         "data-unchecked:shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)]",
-        // CHECKED — saturated brand fill, bright rim, outer halo
-        "data-checked:bg-brand-500 data-checked:border-brand-300",
-        "data-checked:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-2px_6px_rgba(0,0,0,0.15),0_0_0_2px_rgba(124,92,255,0.2),0_0_22px_-2px_rgba(124,92,255,0.8)]",
+        // CHECKED — solid brand fill, no rim/ring, outer glow only
+        "data-checked:bg-brand-500 data-checked:border-brand-500",
+        "data-checked:shadow-[0_0_22px_-2px_rgba(124,92,255,0.8)]",
         "data-disabled:cursor-not-allowed data-disabled:opacity-40",
         className
       )}
