@@ -17,7 +17,7 @@ export function TopBar({ liveState }: { liveState?: LiveState }) {
         <span className="text-fg-subtle/60">/</span>
         <div className="flex flex-col leading-tight min-w-0">
           <span className="text-[0.8125rem] font-medium text-fg-primary truncate">
-            Stream Control Center
+            Go Live
           </span>
           <span className="text-[0.6875rem] text-fg-subtle truncate hidden lg:inline">
             Broadcast one stream to multiple platforms

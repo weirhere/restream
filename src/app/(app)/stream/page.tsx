@@ -41,8 +41,12 @@ import type { StreamPhase } from "@/components/stream/go-live-button";
 import { SourceConfigModal } from "@/components/stream/source-config-modal";
 import { StreamSummaryModal } from "@/components/stream/stream-summary-modal";
 import { DestinationOverrideModal } from "@/components/stream/destination-override-modal";
+import { FirstRunChecklist } from "@/components/stream/first-run-checklist";
 import { useToast } from "@/components/ui/toast";
 import { Hint, GLOSSARY } from "@/components/ui/hint";
+
+const DEFAULT_TITLE =
+  "Building restream-playground — live design engineering";
 
 const CATEGORIES = [
   "Just Chatting",
@@ -110,9 +114,7 @@ export default function StreamPage() {
   >({});
 
   const [category, setCategory] = React.useState("Software Dev");
-  const [title, setTitle] = React.useState(
-    "Building restream-playground — live design engineering"
-  );
+  const [title, setTitle] = React.useState(DEFAULT_TITLE);
   const [description, setDescription] = React.useState(
     "Spinning up a fresh design system from scratch — Next.js, Tailwind, shadcn, motion. Chat along while we build."
   );
@@ -122,7 +124,11 @@ export default function StreamPage() {
   const [countdown, setCountdown] = React.useState(3);
 
   const [postStream, setPostStream] = React.useState<PostStream | null>(null);
-  const [firstTime, setFirstTime] = React.useState(false);
+  // First-time user state: show onboarding checklist until all steps
+  // complete or user explicitly dismisses. Demo default is `true` so
+  // new prototype visitors see the onboarded path first.
+  const [firstTime, setFirstTime] = React.useState(true);
+  const [tourDismissed, setTourDismissed] = React.useState(false);
 
   const [sourceConfigOpen, setSourceConfigOpen] = React.useState(false);
   const [summaryOpen, setSummaryOpen] = React.useState(false);
@@ -345,6 +351,36 @@ export default function StreamPage() {
       <TopBar liveState={liveState} />
 
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-6 py-6 md:px-10 md:py-8">
+        {/* First-run onboarding checklist — only while firstTime and not dismissed */}
+        <AnimatePresence initial={false}>
+          {firstTime && !tourDismissed && phase !== "counting" && (
+            <FirstRunChecklist
+              key="first-run"
+              onDismiss={() => setTourDismissed(true)}
+              steps={[
+                {
+                  id: "destination",
+                  label: "Enable a destination",
+                  hint: "Pick where you'll broadcast",
+                  done: enabledCount > 0,
+                },
+                {
+                  id: "title",
+                  label: "Customize your title",
+                  hint: "Edit from the Details row below",
+                  done: title !== DEFAULT_TITLE,
+                },
+                {
+                  id: "broadcast",
+                  label: "Start your first broadcast",
+                  hint: "Hit Go live when you're ready",
+                  done: postStream !== null,
+                },
+              ]}
+            />
+          )}
+        </AnimatePresence>
+
         <AnimatePresence initial={false}>
           {phase === "offline" && postStream && (
             <PostStreamBanner

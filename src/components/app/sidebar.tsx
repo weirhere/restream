@@ -27,7 +27,7 @@ type NavItem = {
 
 const primary: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Stream", href: "/stream", icon: Radio },
+  { label: "Go Live", href: "/stream", icon: Radio },
   { label: "Destinations", href: "/destinations", icon: Tv2 },
   { label: "Recordings", href: "/recordings", icon: Film },
   { label: "Studio", href: "/studio", icon: Sparkles, badge: "Beta" },
